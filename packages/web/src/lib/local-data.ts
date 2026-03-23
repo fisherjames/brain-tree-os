@@ -178,31 +178,42 @@ export function parseBrainLinks(brainPath: string, files: BrainFile[]): BrainLin
 // ── Execution plan ───────────────────────────────────
 
 export function getExecutionSteps(brainPath: string, files: BrainFile[]): ExecutionStep[] {
-  const execFile = files.find((f) => isExecutionPlanFile(f.path))
-  if (!execFile) return []
+  const planFiles = files.filter((f) => isExecutionPlanFile(f.path) || f.path === 'Commands/Team-Board.md')
+  if (planFiles.length === 0) return []
 
-  const fullPath = path.join(brainPath, execFile.path)
-  try {
-    const content = fs.readFileSync(fullPath, 'utf8')
-    const parsed = parseExecutionPlan(content)
-    return parsed.map((step, idx) => ({
-      id: `step-${idx}`,
-      phase_number: step.phase,
-      step_number: Number(step.stepNumber),
-      title: step.title,
-      status: step.status as ExecutionStep['status'],
-      tasks_json: step.tasks.length > 0 ? step.tasks : null,
-    }))
-  } catch {
-    return []
+  const parsedSteps: ExecutionStep[] = []
+
+  for (const execFile of planFiles) {
+    const fullPath = path.join(brainPath, execFile.path)
+    try {
+      const content = fs.readFileSync(fullPath, 'utf8')
+      const parsed = parseExecutionPlan(content)
+      parsedSteps.push(
+        ...parsed.map((step, idx) => ({
+          id: execFile.path === 'Commands/Team-Board.md' ? `team-step-${idx}` : `step-${idx}`,
+          phase_number: step.phase,
+          step_number: Number(step.stepNumber),
+          title: step.title,
+          status: step.status as ExecutionStep['status'],
+          tasks_json: step.tasks.length > 0 ? step.tasks : null,
+        }))
+      )
+    } catch {
+      // ignore invalid plan files
+    }
   }
+
+  return parsedSteps.sort((a, b) => {
+    if (a.phase_number !== b.phase_number) return a.phase_number - b.phase_number
+    return a.step_number - b.step_number
+  })
 }
 
 // ── Handoffs ─────────────────────────────────────────
 
 export function getHandoffs(brainPath: string, files: BrainFile[]): Handoff[] {
   const handoffFiles = files
-    .filter((f) => f.path.startsWith('Handoffs/') && f.path.endsWith('.md'))
+    .filter((f) => f.path.startsWith('Handoffs/') && f.path.endsWith('.md') && f.path !== 'Handoffs/Handoffs.md')
     .sort((a, b) => b.path.localeCompare(a.path))
 
   return handoffFiles.map((f, idx) => {

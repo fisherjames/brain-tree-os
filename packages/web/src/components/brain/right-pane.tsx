@@ -48,6 +48,7 @@ const PHASE_TITLES: Record<number, string> = {
   2: 'Brain View',
   3: 'MCP + CLI',
   4: 'Polish + Launch',
+  99: 'Team Board',
 };
 
 const STATUS_BADGE: Record<
@@ -121,17 +122,20 @@ function StepRow({
   const badge = STATUS_BADGE[step.status];
   const hasTasks =
     step.tasks_json !== null && step.tasks_json.length > 0;
+  const canToggle = !step.id.startsWith('team-step-') && Boolean(onToggleStep)
 
   return (
     <div>
       <div className="flex items-center gap-1.5 rounded-md px-2 py-1 transition-colors duration-150 hover:bg-text/5">
         {/* Checkbox */}
         <button
+          disabled={!canToggle}
           onClick={(e) => {
             e.stopPropagation();
+            if (!canToggle) return;
             onToggleStep?.(step.id, step.status);
           }}
-          className="shrink-0 text-text-muted transition-colors hover:text-leaf"
+          className={`shrink-0 text-text-muted transition-colors ${canToggle ? 'hover:text-leaf' : 'cursor-default opacity-50'}`}
         >
           {step.status === 'completed' ? (
             <CheckSquare className="h-3.5 w-3.5 text-leaf" />
@@ -203,7 +207,7 @@ function StepRow({
 function ResumeBrainCta() {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const cmd = 'npx brain-tree-os resume && codex';
+  const cmd = 'pnpm brain:start';
 
   function handleCopy(e: React.MouseEvent) {
     e.stopPropagation();
@@ -232,7 +236,7 @@ function ResumeBrainCta() {
       {open && (
         <div className="mt-1.5 rounded-xl border border-border bg-bg-section px-3 pb-3 pt-2.5">
           <p className="text-[11px] leading-relaxed text-text-secondary mb-2.5">
-            Pick up where you left off. Run this in the project terminal:
+            Pick up where you left off. If this repo uses the local team workflow, run:
           </p>
           <div className="flex items-center gap-1.5 rounded-lg bg-[#2B2A25] px-3 py-2.5">
             <code className="flex-1 text-[13px] font-mono text-[#E8E6E0]">
@@ -251,6 +255,9 @@ function ResumeBrainCta() {
               )}
             </button>
           </div>
+          <p className="mt-2 text-[10px] leading-relaxed text-text-muted">
+            Fallback for generic BrainTree repos: <code>npx brain-tree-os resume &amp;&amp; codex</code>
+          </p>
         </div>
       )}
     </div>

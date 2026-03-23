@@ -91,18 +91,21 @@ export function parseExecutionPlan(content: string): ParsedStep[] {
       continue
     }
 
-    // Detect step headers: "#### Step 1.1: Title"
+    // Detect step headers:
+    // - "#### Step 1.1: Title"
+    // - "### EP-1 Brain scaffold"
     const stepMatch = line.match(/^#{2,5}\s+Step\s+([\d]+\.[\d]+[a-z]?):\s*(.+)/i)
-    if (stepMatch) {
-      const stepNumber = stepMatch[1]
-      const title = stepMatch[2].trim()
+    const epMatch = line.match(/^#{2,5}\s+EP-(\d+)\s+(.+)/i)
+    if (stepMatch || epMatch) {
+      const stepNumber = stepMatch ? stepMatch[1] : epMatch![1]
+      const title = (stepMatch ? stepMatch[2] : epMatch![2]).trim()
       let status = 'not_started'
       const tasks: Array<{ done: boolean; text: string }> = []
 
       i++
       while (i < lines.length) {
         const subLine = lines[i]
-        if (subLine.match(/^#{2,5}\s+Step/) || subLine.match(/^#{1,3}\s+Phase/i)) break
+        if (subLine.match(/^#{2,5}\s+Step/) || subLine.match(/^#{2,5}\s+EP-\d+/i) || subLine.match(/^#{1,3}\s+Phase/i)) break
 
         const statusMatch = subLine.match(/^-\s+\*\*Status\*\*:\s*(.+)/i)
         if (statusMatch) {
