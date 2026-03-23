@@ -24,22 +24,21 @@ Optional but useful:
 git clone https://github.com/fisherjames/brain-tree-os.git
 cd brain-tree-os
 npm install
-npm run build
+npm run install:cli
 ```
 
-From this point on, the CLI entrypoint is:
+That builds the fork and installs the `brain-tree-os` command globally via `npm link`.
+
+From this point on, the CLI entrypoint is simply:
 
 ```bash
-node /absolute/path/to/brain-tree-os/packages/cli/dist/index.js
+brain-tree-os
 ```
-
-Examples below assume the fork lives at `/absolute/path/to/brain-tree-os`.
 
 ## 3. Start the BrainTree Viewer
 
 ```bash
-cd /absolute/path/to/brain-tree-os
-node packages/cli/dist/index.js --port 3010
+brain-tree-os --port 3010
 ```
 
 Use `--port 3000` if it is free, or any other port if you already have something running there.
@@ -58,7 +57,7 @@ In a second terminal:
 
 ```bash
 cd /path/to/your-project
-node /absolute/path/to/brain-tree-os/packages/cli/dist/index.js init
+brain-tree-os init
 ```
 
 That creates a Codex-first scaffold and registers the project in:
@@ -80,12 +79,25 @@ The scaffold includes:
 - `Templates/`
 - `Assets/`
 
+If you run `init` in a normal terminal, it now opens a small wizard that lets you confirm:
+- name
+- description
+- preset: `core` or `codex-team`
+- whether to link existing markdown docs
+- whether to add package.json helper scripts
+
+`codex-team` is the richer preset. It adds:
+- `Commands/` workflow notes
+- `Commands/Team-Board.md`
+- a fuller set of role notes under `Agents/`
+- optional `pnpm brain:*` helper scripts if the repo has `package.json`
+
 ## 5. Start the First Codex Session
 
 Still in the project:
 
 ```bash
-node /absolute/path/to/brain-tree-os/packages/cli/dist/index.js resume
+brain-tree-os resume
 codex
 ```
 
@@ -103,24 +115,25 @@ At the start of each later session:
 
 ```bash
 cd /path/to/your-project
-node /absolute/path/to/brain-tree-os/packages/cli/dist/index.js resume
+brain-tree-os resume
 codex
 ```
 
 During the session, use BrainTree commands when they match the work:
 
 ```bash
-node /absolute/path/to/brain-tree-os/packages/cli/dist/index.js plan EP-3
-node /absolute/path/to/brain-tree-os/packages/cli/dist/index.js sprint
-node /absolute/path/to/brain-tree-os/packages/cli/dist/index.js feature "merchant withdrawals"
-node /absolute/path/to/brain-tree-os/packages/cli/dist/index.js sync
-node /absolute/path/to/brain-tree-os/packages/cli/dist/index.js status
+brain-tree-os plan EP-3
+brain-tree-os sprint
+brain-tree-os feature "merchant withdrawals"
+brain-tree-os notes "Product"
+brain-tree-os sync
+brain-tree-os status
 ```
 
 Before ending a meaningful session:
 
 ```bash
-node /absolute/path/to/brain-tree-os/packages/cli/dist/index.js wrap-up
+brain-tree-os wrap-up
 ```
 
 Then have Codex fill the newest handoff, update the relevant notes, and adjust `Execution-Plan.md` if progress changed.
@@ -140,6 +153,7 @@ BrainTree handles project-brain behavior:
 - `brain-tree-os resume`
 - `brain-tree-os wrap-up`
 - `brain-tree-os status`
+- `brain-tree-os notes`
 - `brain-tree-os plan`
 - `brain-tree-os sprint`
 - `brain-tree-os sync`
@@ -179,7 +193,7 @@ This keeps the fork reusable while still letting a project build a richer Codex 
 Run:
 
 ```bash
-node /absolute/path/to/brain-tree-os/packages/cli/dist/index.js status
+brain-tree-os status
 ```
 
 If the project is not registered, re-run `init` inside that repo.
@@ -189,7 +203,7 @@ If the project is not registered, re-run `init` inside that repo.
 Run:
 
 ```bash
-node /absolute/path/to/brain-tree-os/packages/cli/dist/index.js sync
+brain-tree-os sync
 ```
 
 Fix broken wikilinks or missing parent-note links before assuming the viewer is wrong.
@@ -199,7 +213,7 @@ Fix broken wikilinks or missing parent-note links before assuming the viewer is 
 Run the viewer on another port:
 
 ```bash
-node /absolute/path/to/brain-tree-os/packages/cli/dist/index.js --port 3010
+brain-tree-os --port 3010
 ```
 
 ### Codex starts without useful repo context

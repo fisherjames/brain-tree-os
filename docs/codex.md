@@ -14,6 +14,7 @@ For the full local-fork setup and daily workflow, start with [docs/getting-start
 - `brain-tree-os resume`
 - `brain-tree-os wrap-up`
 - `brain-tree-os status`
+- `brain-tree-os notes`
 - `brain-tree-os plan`
 - `brain-tree-os sprint`
 - `brain-tree-os sync`
@@ -29,6 +30,7 @@ For the full local-fork setup and daily workflow, start with [docs/getting-start
 - Old BrainTree resume maps to `brain-tree-os resume`
 - Old BrainTree wrap-up maps to `brain-tree-os wrap-up`
 - Old BrainTree status maps to `brain-tree-os status`
+- Top-down note reconciliation maps to `brain-tree-os notes`
 - In-chat planning maps to Codex `/plan`
 - Codex conversation resume maps to Codex `/resume`
 - Codex `AGENTS.md` bootstrap maps to Codex `/init`

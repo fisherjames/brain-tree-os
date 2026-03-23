@@ -6,6 +6,7 @@ import * as os from 'node:os'
 import * as crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
 import * as net from 'node:net'
+import * as readline from 'node:readline/promises'
 
 const CONFIG_DIR = path.join(os.homedir(), '.braintree-os')
 const BRAINS_JSON = path.join(CONFIG_DIR, 'brains.json')
@@ -39,6 +40,16 @@ type BrainStep = {
   title: string
   status: 'not_started' | 'in_progress' | 'completed' | 'blocked'
   dependencies: string[]
+}
+
+type InitPreset = 'core' | 'codex-team'
+
+type InitOptions = {
+  name: string
+  description: string
+  preset: InitPreset
+  linkExistingDocs: boolean
+  addPackageScripts: boolean
 }
 
 function ensureConfigDir() {
@@ -177,6 +188,19 @@ function updateFileIfExists(filePath: string, updater: (content: string) => stri
   if (updated !== current) {
     fs.writeFileSync(filePath, updated)
   }
+}
+
+function readJsonIfExists(filePath: string): any | null {
+  if (!fs.existsSync(filePath)) return null
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'))
+  } catch {
+    return null
+  }
+}
+
+function hasPackageJson(brainRoot: string): boolean {
+  return fs.existsSync(path.join(brainRoot, 'package.json'))
 }
 
 function detectScripts(brainRoot: string): string[] {
@@ -438,6 +462,7 @@ function commandPromptSummary(brainRoot: string) {
   console.log('  - brain-tree-os resume')
   console.log('  - brain-tree-os wrap-up')
   console.log('  - brain-tree-os status')
+  console.log('  - brain-tree-os notes <scope>')
   console.log('  - brain-tree-os plan <step>')
   console.log('  - brain-tree-os sprint')
   console.log('  - brain-tree-os sync')
@@ -445,11 +470,243 @@ function commandPromptSummary(brainRoot: string) {
   console.log('')
 }
 
-function createBrainScaffold(brainRoot: string, name: string, description: string): BrainMeta {
+async function runInherited(command: string, args: string[], cwd: string = process.cwd()): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd,
+      stdio: 'inherit',
+      env: process.env,
+    })
+
+    child.on('error', reject)
+    child.on('exit', code => resolve(code ?? 0))
+  })
+}
+
+function managedMarkdownRelativePaths(): string[] {
+  return [
+    'BRAIN-INDEX.md',
+    'AGENTS.md',
+    'Execution-Plan.md',
+    path.join('01_Product', 'Product.md'),
+    path.join('01_Product', 'Project-Goals.md'),
+    path.join('01_Product', 'Current-Scope.md'),
+    path.join('02_Engineering', 'Engineering.md'),
+    path.join('02_Engineering', 'Architecture.md'),
+    path.join('02_Engineering', 'Codebase-Map.md'),
+    path.join('03_Operations', 'Operations.md'),
+    path.join('03_Operations', 'Runbook.md'),
+    path.join('03_Operations', 'Workflow.md'),
+    path.join('Agents', 'Agents.md'),
+    path.join('Agents', 'Project-Operator.md'),
+    path.join('Assets', 'Assets.md'),
+    path.join('Templates', 'Templates.md'),
+    path.join('Templates', 'Handoff-Template.md'),
+    path.join('Handoffs', 'Handoffs.md'),
+    path.join('Handoffs', 'handoff-000.md'),
+  ]
+}
+
+async function askText(rl: readline.Interface, prompt: string, defaultValue: string): Promise<string> {
+  const answer = (await rl.question(`${prompt} [${defaultValue}]: `)).trim()
+  return answer || defaultValue
+}
+
+async function askPreset(rl: readline.Interface, defaultPreset: InitPreset): Promise<InitPreset> {
+  const answer = (await rl.question(`Preset ([c]ore / [t]eam) [${defaultPreset === 'codex-team' ? 'team' : 'core'}]: `)).trim().toLowerCase()
+  if (!answer) return defaultPreset
+  if (answer === 'c' || answer === 'core') return 'core'
+  if (answer === 't' || answer === 'team' || answer === 'codex-team') return 'codex-team'
+  return defaultPreset
+}
+
+async function askYesNo(rl: readline.Interface, prompt: string, defaultValue: boolean): Promise<boolean> {
+  const hint = defaultValue ? 'Y/n' : 'y/N'
+  const answer = (await rl.question(`${prompt} [${hint}]: `)).trim().toLowerCase()
+  if (!answer) return defaultValue
+  return answer === 'y' || answer === 'yes'
+}
+
+async function resolveInitOptions(brainRoot: string, args: string[]): Promise<InitOptions> {
+  const defaultName = resolveProjectName(brainRoot, parseOption(args, '--name'))
+  const defaultDescription = resolveProjectDescription(brainRoot, parseOption(args, '--description'))
+  const explicitPreset = parseOption(args, '--preset')
+  const defaultPreset: InitPreset = explicitPreset === 'core' || explicitPreset === 'codex-team'
+    ? explicitPreset
+    : 'codex-team'
+
+  const explicitLinkExistingDocs = hasFlag(args, '--link-existing-docs')
+    ? true
+    : hasFlag(args, '--no-link-existing-docs')
+      ? false
+      : undefined
+
+  const explicitAddPackageScripts = hasFlag(args, '--package-scripts')
+    ? true
+    : hasFlag(args, '--no-package-scripts')
+      ? false
+      : undefined
+
+  const canAddPackageScripts = hasPackageJson(brainRoot)
+  const shouldPrompt = !hasFlag(args, '--yes') && Boolean(process.stdin.isTTY && process.stdout.isTTY)
+
+  if (!shouldPrompt) {
+    return {
+      name: defaultName,
+      description: defaultDescription,
+      preset: defaultPreset,
+      linkExistingDocs: explicitLinkExistingDocs ?? defaultPreset === 'codex-team',
+      addPackageScripts: canAddPackageScripts && (explicitAddPackageScripts ?? defaultPreset === 'codex-team'),
+    }
+  }
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
+  try {
+    console.log('')
+    console.log('  BrainTree init wizard')
+    console.log('')
+    const name = await askText(rl, 'Brain name', defaultName)
+    const description = await askText(rl, 'Description', defaultDescription)
+    const preset = await askPreset(rl, defaultPreset)
+    const linkExistingDocs = explicitLinkExistingDocs ?? await askYesNo(
+      rl,
+      'Link existing markdown docs into the brain',
+      preset === 'codex-team'
+    )
+    const addPackageScripts = canAddPackageScripts
+      ? explicitAddPackageScripts ?? await askYesNo(
+          rl,
+          'Add package.json brain helper scripts',
+          preset === 'codex-team'
+        )
+      : false
+
+    console.log('')
+
+    return { name, description, preset, linkExistingDocs, addPackageScripts }
+  } finally {
+    rl.close()
+  }
+}
+
+function importableMarkdownFiles(brainRoot: string): string[] {
+  const excludedDirs = new Set([
+    '.braintree',
+    '01_Product',
+    '02_Engineering',
+    '03_Operations',
+    '04_Operations',
+    'Agents',
+    'Assets',
+    'Templates',
+    'Handoffs',
+    'Commands',
+    'node_modules',
+  ])
+  const managed = new Set(managedMarkdownRelativePaths())
+
+  return findMarkdownFiles(brainRoot)
+    .map(file => path.relative(brainRoot, file))
+    .filter(relative => {
+      if (managed.has(relative)) return false
+      const firstSegment = relative.split(path.sep)[0]
+      return !excludedDirs.has(firstSegment)
+    })
+    .sort()
+}
+
+function injectPackageScripts(brainRoot: string, preset: InitPreset) {
+  if (!hasPackageJson(brainRoot)) return
+  const packageJsonPath = path.join(brainRoot, 'package.json')
+  const packageJson = readJsonIfExists(packageJsonPath)
+  if (!packageJson || typeof packageJson !== 'object') return
+
+  const scripts = typeof packageJson.scripts === 'object' && packageJson.scripts ? packageJson.scripts : {}
+  const additions: Record<string, string> = {
+    'brain:viewer': 'brain-tree-os',
+    'brain:resume': 'brain-tree-os resume',
+    'brain:status': 'brain-tree-os status',
+    'brain:sync': 'brain-tree-os sync',
+    'brain:wrap': 'brain-tree-os wrap-up',
+    'brain:notes': 'brain-tree-os notes',
+    'brain:plan': 'brain-tree-os plan',
+    'brain:feature': 'brain-tree-os feature',
+  }
+
+  if (preset === 'codex-team') {
+    additions['brain:start'] = 'brain-tree-os resume && codex'
+    additions['brain:end'] = 'brain-tree-os wrap-up && codex "Fill the newest handoff in Handoffs/, update the relevant brain notes, and update Execution-Plan.md if progress changed."'
+  }
+
+  let changed = false
+  for (const [key, value] of Object.entries(additions)) {
+    if (!scripts[key]) {
+      scripts[key] = value
+      changed = true
+    }
+  }
+
+  if (!changed) return
+  packageJson.scripts = scripts
+  fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n')
+}
+
+function linkExistingDocs(brainRoot: string) {
+  const docs = importableMarkdownFiles(brainRoot)
+  if (docs.length === 0) return
+
+  const basenames = new Map<string, number>()
+  for (const relative of docs) {
+    const base = path.basename(relative, '.md')
+    basenames.set(base, (basenames.get(base) || 0) + 1)
+  }
+
+  const existingDocsPath = path.join(brainRoot, '03_Operations', 'Existing-Docs.md')
+  const lines = [
+    '# Existing Docs',
+    '',
+    '> Part of [[Operations]]',
+    '',
+    'Imported markdown docs that already existed in the repository before the brain scaffold was created.',
+    '',
+    '## Linked Files',
+  ]
+
+  for (const relative of docs) {
+    const base = path.basename(relative, '.md')
+    const unique = basenames.get(base) === 1
+    lines.push(unique ? `- [[${base}]] - \`${relative}\`` : `- \`${relative}\``)
+
+    const filePath = path.join(brainRoot, relative)
+    const current = fs.readFileSync(filePath, 'utf8')
+    if (current.includes('> Part of [[')) continue
+
+    const titleMatch = current.match(/^(# .+\n)/)
+    if (titleMatch) {
+      const updated = current.replace(titleMatch[1], `${titleMatch[1]}\n> Part of [[Existing-Docs]]\n\n`)
+      fs.writeFileSync(filePath, updated)
+    } else {
+      fs.writeFileSync(filePath, `> Part of [[Existing-Docs]]\n\n${current}`)
+    }
+  }
+  lines.push('')
+
+  writeFileIfMissing(existingDocsPath, `${lines.join('\n')}\n`)
+  updateFileIfExists(path.join(brainRoot, '03_Operations', 'Operations.md'), content => {
+    const link = '- [[Existing-Docs]]'
+    return content.includes(link) ? content : `${content.trimEnd()}\n${link}\n`
+  })
+}
+
+function createBrainScaffold(brainRoot: string, options: InitOptions): BrainMeta {
   const created = isoNow()
   const id = crypto.randomUUID()
   const scripts = detectScripts(brainRoot)
   const scriptList = scripts.length > 0 ? scripts.map(script => `- \`${script}\``).join('\n') : '- Add your common project commands here'
+  const preset = options.preset
+  const hasCommands = preset === 'codex-team'
+  const name = options.name
+  const description = options.description
   const meta: BrainMeta = {
     id,
     name,
@@ -473,7 +730,7 @@ function createBrainScaffold(brainRoot: string, name: string, description: strin
 - [[Product]] - goals, scope, users, and roadmap notes
 - [[Engineering]] - architecture, codebase structure, and technical decisions
 - [[Operations]] - runbooks, workflows, release notes, and maintenance tasks
-- [[Agents]] - Codex-facing operating rules and reusable agent notes
+${hasCommands ? '- [[Commands]] - repeatable Codex start, planning, note-sync, and wrap-up loops\n' : ''}- [[Agents]] - Codex-facing operating rules and reusable role notes
 - [[Handoffs]] - session continuity notes
 - [[Templates]] - reusable templates for future sessions
 - [[Assets]] - screenshots, PDFs, diagrams, and reference files
@@ -496,11 +753,12 @@ function createBrainScaffold(brainRoot: string, name: string, description: strin
 ## Session Start
 - Read [[BRAIN-INDEX]], [[Execution-Plan]], and the latest entry in [[Handoffs]] before making non-trivial changes.
 - Open the relevant folder index before changing code or docs.
-- Prefer small, verifiable edits over speculative rewrites.
+${hasCommands ? '- Open [[Commands]] and the relevant role note in [[Agents]] when using the richer Codex workflow layer.\n' : ''}- Prefer small, verifiable edits over speculative rewrites.
 
 ## Working Rules
 - Keep project-specific decisions in the brain files, not only in chat history.
 - Update the matching brain note when architecture, priorities, or risks change.
+- Use \`brain-tree-os notes "<scope>"\` after changing a top-level or workflow note so downstream notes do not drift.
 - End meaningful sessions with a new handoff note and execution plan updates.
 
 ## Verification
@@ -531,7 +789,11 @@ function createBrainScaffold(brainRoot: string, name: string, description: strin
 - **Status**: not_started
 - **Goal**: Refine the product, engineering, and operations notes from the actual repository.
 
-### EP-4 Start the next meaningful task
+### EP-4 Link existing docs and workflows into the brain
+- **Status**: not_started
+- **Goal**: Pull the existing repo docs and routines into the brain so Codex sees the real operating context.
+
+### EP-5 Start the next meaningful task
 - **Status**: not_started
 - **Goal**: Use the updated brain to drive the next real code change.
 `
@@ -624,6 +886,17 @@ This area tracks how to run the project, verify changes, and keep session contin
 ## Key Files
 - [[Runbook]]
 - [[Workflow]]
+- [[Existing-Docs]]
+`
+  )
+
+  writeFileIfMissing(
+    path.join(brainRoot, '03_Operations', 'Existing-Docs.md'),
+    `# Existing Docs
+
+> Part of [[Operations]]
+
+Imported markdown docs from the repository should be linked here when you run init with doc linking enabled.
 `
   )
 
@@ -635,6 +908,7 @@ This area tracks how to run the project, verify changes, and keep session contin
 
 - Replace this with the real setup, run, test, and deploy commands for the project.
 - Capture any environment prerequisites or local services.
+${options.addPackageScripts ? '\n## Helper Commands\n- `pnpm brain:viewer`\n- `pnpm brain:resume`\n- `pnpm brain:status`\n- `pnpm brain:sync`\n- `pnpm brain:wrap`\n- `pnpm brain:notes -- "<scope>"`\n' : ''}
 `
   )
 
@@ -644,12 +918,131 @@ This area tracks how to run the project, verify changes, and keep session contin
 
 > Part of [[Operations]]
 
-1. Read [[BRAIN-INDEX]], [[AGENTS]], [[Execution-Plan]], and the latest handoff.
+${hasCommands
+  ? `1. Read [[BRAIN-INDEX]], [[AGENTS]], [[Execution-Plan]], and the latest handoff.
+2. Use [[Commands]] for the canonical session workflow loops.
+3. Open the relevant area note before editing code or docs.
+4. Use \`brain-tree-os notes "<scope>"\` after changing a top-level or workflow note.
+5. Create a new handoff before ending a meaningful session.`
+  : `1. Read [[BRAIN-INDEX]], [[AGENTS]], [[Execution-Plan]], and the latest handoff.
 2. Inspect the relevant area before editing code.
 3. Make a narrow, testable change.
-4. Update the brain files and create a new handoff before ending the session.
+4. Update the brain files and create a new handoff before ending the session.`}
 `
   )
+
+  if (hasCommands) {
+    writeFileIfMissing(
+      path.join(brainRoot, 'Commands', 'Commands.md'),
+      `# Commands
+
+> Part of [[BRAIN-INDEX]]
+
+This folder defines the repeatable Codex workflow layer for the repository.
+
+## Key Files
+- [[Start-Loop]]
+- [[Plan-Loop]]
+- [[Notes-Loop]]
+- [[Team-Board]]
+- [[End-Loop]]
+`
+    )
+
+    writeFileIfMissing(
+      path.join(brainRoot, 'Commands', 'Start-Loop.md'),
+      `# Start Loop
+
+> Part of [[Commands]]
+
+## Canonical Start
+\`\`\`bash
+brain-tree-os resume
+codex
+${options.addPackageScripts ? 'pnpm brain:start' : ''}
+\`\`\`
+
+## Sequence
+1. Read the core brain files shown by \`brain-tree-os resume\`.
+2. Open the relevant note index and role note before non-trivial work.
+3. Keep the work scoped and update the brain when decisions change.
+`
+    )
+
+    writeFileIfMissing(
+      path.join(brainRoot, 'Commands', 'Plan-Loop.md'),
+      `# Plan Loop
+
+> Part of [[Commands]]
+
+## Canonical Planning
+\`\`\`bash
+brain-tree-os plan EP-2
+${options.addPackageScripts ? 'pnpm brain:plan -- EP-2' : ''}
+\`\`\`
+
+## Sequence
+1. Use \`brain-tree-os plan\` to create a linked planning note from [[Execution-Plan]].
+2. Use Codex \`/plan\` inside the chat to refine that step into an implementation sequence.
+3. Record decisions and verification before editing code.
+`
+    )
+
+    writeFileIfMissing(
+      path.join(brainRoot, 'Commands', 'Notes-Loop.md'),
+      `# Notes Loop
+
+> Part of [[Commands]]
+
+## Canonical Reconciliation
+\`\`\`bash
+brain-tree-os notes "Product"
+${options.addPackageScripts ? 'pnpm brain:notes -- "Product"' : ''}
+\`\`\`
+
+## Sequence
+1. Run \`brain-tree-os notes "<scope>"\` after changing a top-level or workflow note.
+2. Let Codex reconcile only the downstream notes that are now stale.
+3. Run \`brain-tree-os sync\` after the update if you want an explicit graph check.
+`
+    )
+
+    writeFileIfMissing(
+      path.join(brainRoot, 'Commands', 'Team-Board.md'),
+      `# Team Board
+
+> Part of [[BRAIN-INDEX]]
+
+This note is a viewer-facing placeholder for projects that later add repo-local orchestration or parallel work tracking.
+
+## Phase 99 - Team Board
+
+### Step 99.1: No active team workflow configured
+- **Status**: not_started
+- Add repo-local orchestration only if the project genuinely needs it.
+`
+    )
+
+    writeFileIfMissing(
+      path.join(brainRoot, 'Commands', 'End-Loop.md'),
+      `# End Loop
+
+> Part of [[Commands]]
+
+## Canonical Wrap-Up
+\`\`\`bash
+brain-tree-os wrap-up
+${options.addPackageScripts ? 'pnpm brain:end' : ''}
+\`\`\`
+
+## Sequence
+1. Create the next handoff note.
+2. Fill it with what changed, verification, risks, and the next step.
+3. Update [[Execution-Plan]] if progress changed.
+4. If you use the generated \`pnpm brain:end\` helper, remember it opens a fresh Codex launch rather than writing into a live existing session.
+`
+    )
+  }
 
   writeFileIfMissing(
     path.join(brainRoot, 'Agents', 'Agents.md'),
@@ -661,7 +1054,7 @@ Codex-specific operating notes live here.
 
 ## Key Files
 - [[Project-Operator]]
-`
+${hasCommands ? '- [[Founder-CEO]]\n- [[Product-Lead]]\n- [[Growth-Marketing]]\n- [[Frontend-Engineer]]\n- [[Backend-Engineer]]\n- [[Mobile-Engineer]]\n- [[DevOps-Release]]\n' : ''}`
   )
 
   writeFileIfMissing(
@@ -679,6 +1072,36 @@ Use this agent note for routine implementation work in Codex.
 - Keep decisions in the repository brain, not only in session memory.
 `
   )
+
+  if (hasCommands) {
+    const roleNotes: Array<[string, string, string]> = [
+      ['Founder-CEO.md', 'Founder / CEO', 'Use this note when shaping direction, priorities, positioning, or business tradeoffs. Keep the output high-level, explicit about tradeoffs, and tied back to the actual product constraints.'],
+      ['Product-Lead.md', 'Product Lead', 'Use this note for scope shaping, requirement clarity, rollout planning, and user-facing tradeoffs. Convert vague ideas into concrete acceptance criteria before coding starts.'],
+      ['Growth-Marketing.md', 'Growth / Marketing', 'Use this note for messaging, landing pages, funnels, lifecycle copy, or launch planning. Keep claims honest and tie messaging to the real product behavior.'],
+      ['Frontend-Engineer.md', 'Frontend Engineer', 'Use this note for web UI, design systems, rendering behavior, and browser-facing user flows. Preserve existing UX patterns unless the product direction clearly changed.'],
+      ['Backend-Engineer.md', 'Backend Engineer', 'Use this note for APIs, data contracts, services, and persistence concerns. Be explicit about schema, error handling, and contract drift risks.'],
+      ['Mobile-Engineer.md', 'Mobile Engineer', 'Use this note for native or mobile-specific UI, device behavior, and performance-sensitive flows. Keep verification grounded in the platform reality.'],
+      ['DevOps-Release.md', 'DevOps / Release', 'Use this note for build pipelines, environment setup, deploys, observability, or operational safety work. Prefer reversible changes and clear rollback guidance.'],
+    ]
+
+    for (const [fileName, title, body] of roleNotes) {
+      writeFileIfMissing(
+        path.join(brainRoot, 'Agents', fileName),
+        `# ${title}
+
+> Part of [[Agents]]
+
+## Purpose
+${body}
+
+## Instructions
+- Read the relevant brain notes before changing implementation details.
+- Keep decisions explicit in the repository brain when workflows or priorities shift.
+- Prefer the narrowest realistic verification for the work in this role.
+`
+      )
+    }
+  }
 
   writeFileIfMissing(
     path.join(brainRoot, 'Assets', 'Assets.md'),
@@ -759,6 +1182,14 @@ Inspect the real repository and replace the placeholder notes in [[Product]], [[
 `
   )
 
+  if (options.addPackageScripts) {
+    injectPackageScripts(brainRoot, preset)
+  }
+
+  if (options.linkExistingDocs) {
+    linkExistingDocs(brainRoot)
+  }
+
   return meta
 }
 
@@ -814,12 +1245,31 @@ function printResume(brainRoot: string) {
   console.log(`  - ${path.join(brainRoot, 'BRAIN-INDEX.md')}`)
   console.log(`  - ${path.join(brainRoot, 'AGENTS.md')}`)
   console.log(`  - ${path.join(brainRoot, 'Execution-Plan.md')}`)
+  if (fs.existsSync(path.join(brainRoot, 'Commands', 'Commands.md'))) {
+    console.log(`  - ${path.join(brainRoot, 'Commands', 'Commands.md')}`)
+  }
   if (latestHandoff) {
     console.log(`  - ${path.join(handoffDir, latestHandoff)}`)
   }
   console.log('')
   console.log('  Then inspect the relevant folder index before editing code.')
   console.log('')
+}
+
+function buildNotesPrompt(brainRoot: string, scope: string): string {
+  const commandsPath = path.join(brainRoot, 'Commands', 'Commands.md')
+  const commandsText = fs.existsSync(commandsPath)
+    ? ` Also read ${commandsPath}.`
+    : ''
+
+  return [
+    `Reconcile the BrainTree notes in ${brainRoot} after changes to "${scope}".`,
+    `Read ${path.join(brainRoot, 'BRAIN-INDEX.md')}, ${path.join(brainRoot, 'AGENTS.md')}, ${path.join(brainRoot, 'Execution-Plan.md')}, and the latest handoff in ${path.join(brainRoot, 'Handoffs')}.${commandsText}`,
+    `Treat "${scope}" as the authoritative changed note, area, or workflow input.`,
+    'Update only the downstream brain notes whose assumptions, priorities, workflows, or command references are now stale.',
+    'Keep wikilinks valid, preserve the existing structure, and avoid changing product code unless a note references a stale path or command.',
+    'End with a concise summary of which notes changed and whether any manual follow-up is still needed.',
+  ].join(' ')
 }
 
 function createWrapUp(brainRoot: string): string {
@@ -923,9 +1373,9 @@ function showWelcome(port: number) {
   console.log('  |                                                             |')
   console.log('  |  1. Open that project in a terminal                         |')
   console.log('  |  2. Run: brain-tree-os init                                 |')
-  console.log('  |  3. Open Codex in the project                               |')
-  console.log('  |  4. Optional in Codex: /init or /plan                       |')
-  console.log('  |  5. Run: brain-tree-os resume                               |')
+  console.log('  |  3. Run: brain-tree-os resume                               |')
+  console.log('  |  4. Open Codex in the project                               |')
+  console.log('  |  5. Optional in Codex: /plan or /status                     |')
   console.log('  |                                                             |')
   console.log('  |  The brain will appear in the viewer automatically.         |')
   console.log('  +-------------------------------------------------------------+')
@@ -944,6 +1394,7 @@ function showHelp() {
     brain-tree-os resume            Show the files to read before working
     brain-tree-os wrap-up           Create the next handoff template
     brain-tree-os status            Show the current brain or all registered brains
+    brain-tree-os notes <scope>     Reconcile downstream notes after top-level edits
     brain-tree-os plan [step]       Create a step plan note for an execution-plan step
     brain-tree-os sprint            Create a sprint note from ready and in-progress work
     brain-tree-os sync              Scan the brain for broken links and disconnected files
@@ -958,6 +1409,12 @@ function showHelp() {
   Init options:
     --name <text>                   Override the brain name
     --description <text>            Override the brain description
+    --preset <core|codex-team>      Choose the scaffold depth (default: codex-team)
+    --yes                           Accept init defaults without prompts
+    --link-existing-docs            Link existing markdown docs into the brain
+    --no-link-existing-docs         Skip linking existing markdown docs
+    --package-scripts               Add package.json brain helper scripts when possible
+    --no-package-scripts            Skip package.json helper scripts
 `)
 }
 
@@ -1056,9 +1513,8 @@ async function main() {
     }
 
     const brainRoot = process.cwd()
-    const name = resolveProjectName(brainRoot, parseOption(args, '--name'))
-    const description = resolveProjectDescription(brainRoot, parseOption(args, '--description'))
-    const meta = createBrainScaffold(brainRoot, name, description)
+    const initOptions = await resolveInitOptions(brainRoot, args)
+    const meta = createBrainScaffold(brainRoot, initOptions)
 
     registerBrain({
       id: meta.id,
@@ -1075,6 +1531,13 @@ async function main() {
       console.log(`  Viewer: ${viewerUrl}`)
     } else {
       console.log('  Start `brain-tree-os` to open the viewer.')
+    }
+    console.log(`  Preset: ${initOptions.preset}`)
+    if (initOptions.addPackageScripts) {
+      console.log('  Package scripts: added helper `brain:*` scripts to package.json')
+    }
+    if (initOptions.linkExistingDocs) {
+      console.log('  Existing docs: linked into 03_Operations/Existing-Docs.md where possible')
     }
     console.log('  Next: run `brain-tree-os resume`, then open Codex in this project.')
     return
@@ -1103,6 +1566,28 @@ async function main() {
     const handoffPath = createWrapUp(brainRoot)
     console.log(`  Created handoff template: ${handoffPath}`)
     console.log('  Fill it in, then update Execution-Plan.md before ending the session.')
+    return
+  }
+
+  if (command === 'notes') {
+    const brainRoot = findBrainRoot(process.cwd())
+    if (!brainRoot) {
+      console.log('  No brain found in this directory tree.')
+      console.log('  Run `brain-tree-os init` first.')
+      return
+    }
+
+    const scope = args.join(' ').trim()
+    if (!scope) {
+      console.log('  Usage: brain-tree-os notes "<scope>"')
+      return
+    }
+
+    const exitCode = await runInherited('codex', ['exec', '--full-auto', '--ephemeral', buildNotesPrompt(brainRoot, scope)], brainRoot)
+    if (exitCode !== 0) {
+      process.exit(exitCode)
+    }
+    console.log('  Reconciliation finished. Run `brain-tree-os sync` if you want an explicit graph check.')
     return
   }
 

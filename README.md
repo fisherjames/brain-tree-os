@@ -34,13 +34,13 @@ This README shows the fastest path. For the full fork-local setup, existing-proj
 git clone https://github.com/fisherjames/brain-tree-os.git
 cd brain-tree-os
 npm install
-npm run build
+npm run install:cli
 ```
 
 ### 2. Start the viewer
 
 ```bash
-node packages/cli/dist/index.js
+brain-tree-os
 ```
 
 This starts the local BrainTree viewer and opens the brains page in your browser. Use `--port 3010` if `3000` is already in use.
@@ -51,17 +51,18 @@ Open a second terminal in the project you want Codex to manage:
 
 ```bash
 cd /path/to/your-project
-node /absolute/path/to/brain-tree-os/packages/cli/dist/index.js init
+brain-tree-os init
 ```
 
 That command creates a Codex-first brain scaffold inside the repository and registers it in `~/.braintree-os/brains.json`.
+In a normal terminal it now opens a short init wizard with defaults, and the recommended preset is `codex-team`.
 
 ### 4. Resume the project in Codex
 
 Still inside the project:
 
 ```bash
-node /absolute/path/to/brain-tree-os/packages/cli/dist/index.js resume
+brain-tree-os resume
 codex
 ```
 
@@ -112,6 +113,10 @@ Create the next handoff template in `Handoffs/` so the session ends with explici
 ### `brain-tree-os status`
 
 Show the current brain if you are inside one, otherwise list all registered brains.
+
+### `brain-tree-os notes <scope>`
+
+Run a bounded Codex reconciliation pass after changing a top-level or workflow note so downstream brain notes stay aligned.
 
 ### `brain-tree-os plan [step]`
 
@@ -181,9 +186,9 @@ If you want repo-specific wrappers such as `pnpm brain:start`, role skills, or p
 ### Session 0
 
 ```bash
-node /absolute/path/to/brain-tree-os/packages/cli/dist/index.js
+brain-tree-os
 cd /path/to/project
-node /absolute/path/to/brain-tree-os/packages/cli/dist/index.js init
+brain-tree-os init
 codex
 ```
 
@@ -191,7 +196,7 @@ codex
 
 ```bash
 cd /path/to/project
-node /absolute/path/to/brain-tree-os/packages/cli/dist/index.js resume
+brain-tree-os resume
 codex
 ```
 
@@ -199,7 +204,7 @@ Then:
 1. Read `BRAIN-INDEX.md`, `AGENTS.md`, `Execution-Plan.md`, and the latest handoff.
 2. Inspect the relevant folder index.
 3. Make a narrow, real change.
-4. Run `node /absolute/path/to/brain-tree-os/packages/cli/dist/index.js wrap-up` before ending the session.
+4. Run `brain-tree-os wrap-up` before ending the session.
 
 ---
 
