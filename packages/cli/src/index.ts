@@ -7,10 +7,17 @@ import { spawn } from 'node:child_process'
 import * as net from 'node:net'
 
 const CONFIG_DIR = path.join(os.homedir(), '.braintree-os')
-const COMMANDS_DIR = path.join(os.homedir(), '.claude', 'commands')
+const CLAUDE_COMMANDS_DIR = path.join(os.homedir(), '.claude', 'commands')
 const SERVER_JSON = path.join(CONFIG_DIR, 'server.json')
 
 const VERSION = '0.1.0'
+
+type AgentMode = 'claude' | 'codex' | 'none'
+
+type InstallResult = {
+  agentMode: AgentMode
+  commandCount: number
+}
 
 function ensureConfigDir() {
   fs.mkdirSync(CONFIG_DIR, { recursive: true })
@@ -20,17 +27,41 @@ function ensureConfigDir() {
   }
 }
 
-async function installCommands(): Promise<number> {
-  fs.mkdirSync(COMMANDS_DIR, { recursive: true })
+function parseAgentMode(args: string[]): AgentMode {
+  const inlineArg = args.find(arg => arg.startsWith('--agent='))
+  const rawValue = inlineArg ? inlineArg.split('=')[1] : (() => {
+    const idx = args.indexOf('--agent')
+    return idx >= 0 ? args[idx + 1] : undefined
+  })()
+
+  if (!rawValue) return 'claude'
+  if (rawValue === 'claude' || rawValue === 'codex' || rawValue === 'none') {
+    return rawValue
+  }
+
+  throw new Error(`Unsupported agent mode: ${rawValue}`)
+}
+
+async function installClaudeCommands(): Promise<number> {
+  fs.mkdirSync(CLAUDE_COMMANDS_DIR, { recursive: true })
   const commandsSource = path.join(__dirname, '..', 'commands')
   if (!fs.existsSync(commandsSource)) return 0
 
   const files = fs.readdirSync(commandsSource).filter(f => f.endsWith('.md'))
   for (const file of files) {
-    const dest = path.join(COMMANDS_DIR, file)
+    const dest = path.join(CLAUDE_COMMANDS_DIR, file)
     fs.copyFileSync(path.join(commandsSource, file), dest)
   }
   return files.length
+}
+
+async function installAgentIntegration(agentMode: AgentMode): Promise<InstallResult> {
+  if (agentMode !== 'claude') {
+    return { agentMode, commandCount: 0 }
+  }
+
+  const commandCount = await installClaudeCommands()
+  return { agentMode, commandCount }
 }
 
 async function findFreePort(preferred: number): Promise<number> {
@@ -40,7 +71,6 @@ async function findFreePort(preferred: number): Promise<number> {
       server.close(() => resolve(preferred))
     })
     server.on('error', () => {
-      // Port in use, find a random free one
       const server2 = net.createServer()
       server2.listen(0, () => {
         const port = (server2.address() as net.AddressInfo).port
@@ -76,28 +106,49 @@ function cleanupServerConfig() {
   }
 }
 
-function showWelcome(port: number, commandCount: number) {
+function showWelcome(port: number, installResult: InstallResult) {
   const url = `http://localhost:${port}/brains`
   console.log('')
   console.log(`  BrainTree OS v${VERSION}`)
   console.log('')
-  console.log(`  > ${commandCount} commands installed to ~/.claude/commands/`)
+
+  if (installResult.agentMode === 'claude') {
+    console.log(`  > ${installResult.commandCount} commands installed to ~/.claude/commands/`)
+  } else if (installResult.agentMode === 'codex') {
+    console.log('  > Codex mode selected (no Claude slash commands installed)')
+  } else {
+    console.log('  > Agent integration skipped (--agent none)')
+  }
+
   console.log(`  > Server running at ${url}`)
   console.log('')
-  console.log('  +-----------------------------------------------------+')
-  console.log('  |                                                      |')
-  console.log('  |  To create your first brain:                         |')
-  console.log('  |                                                      |')
-  console.log('  |  1. Open a new terminal                              |')
-  console.log('  |  2. Create a project folder:                         |')
-  console.log('  |     mkdir -p ~/brains/my-project                     |')
-  console.log('  |  3. Start Claude Code there:                         |')
-  console.log('  |     cd ~/brains/my-project && claude                 |')
-  console.log('  |  4. Run the init command:                            |')
-  console.log('  |     /init-braintree                                  |')
-  console.log('  |                                                      |')
-  console.log('  |  Your brain will appear at the URL above.            |')
-  console.log('  +-----------------------------------------------------+')
+  console.log('  +-------------------------------------------------------------+')
+  console.log('  |                                                             |')
+  console.log('  |  To create your first brain:                                |')
+  console.log('  |                                                             |')
+  console.log('  |  1. Open a new terminal                                     |')
+  console.log('  |  2. Create a project folder                                 |')
+  console.log('  |     mkdir -p ~/brains/my-project                            |')
+
+  if (installResult.agentMode === 'claude') {
+    console.log('  |  3. Start Claude Code there                                 |')
+    console.log('  |     cd ~/brains/my-project && claude                        |')
+    console.log('  |  4. Run the init command                                    |')
+    console.log('  |     /init-braintree                                         |')
+  } else if (installResult.agentMode === 'codex') {
+    console.log('  |  3. Start Codex there                                       |')
+    console.log('  |     cd ~/brains/my-project && codex                         |')
+    console.log('  |  4. Ask Codex to scaffold a BrainTree brain                 |')
+    console.log('  |     (see the Codex section in the README)                   |')
+  } else {
+    console.log('  |  3. Open your preferred AI tool there                       |')
+    console.log('  |  4. Create BRAIN-INDEX.md, CLAUDE.md, Handoffs/, and        |')
+    console.log('  |     an execution plan using the BrainTree format            |')
+  }
+
+  console.log('  |                                                             |')
+  console.log('  |  Your brain will appear at the URL above.                   |')
+  console.log('  +-------------------------------------------------------------+')
   console.log('')
   console.log('  Press Ctrl+C to stop the server.')
   console.log('')
@@ -108,28 +159,41 @@ function showHelp() {
   brain-tree-os v${VERSION} - Open source brain viewer
 
   Usage:
-    brain-tree-os              Start the server and open browser
-    brain-tree-os status       Show registered brains
-    brain-tree-os help         Show this help
+    brain-tree-os                      Start the server and open browser
+    brain-tree-os status              Show registered brains
+    brain-tree-os help                Show this help
 
   Options:
-    --port <number>   Custom port (default: 3000)
-    --no-open         Don't auto-open browser
+    --port <number>                   Custom port (default: 3000)
+    --no-open                         Don't auto-open browser
+    --agent <claude|codex|none>       Choose integration mode (default: claude)
 `)
 }
 
-function showStatus() {
+function showStatus(agentMode: AgentMode) {
   const configFile = path.join(CONFIG_DIR, 'brains.json')
   if (!fs.existsSync(configFile)) {
     console.log('  No brains registered yet.')
-    console.log('  Run /init-braintree in Claude Code to create your first brain.')
+    if (agentMode === 'claude') {
+      console.log('  Run /init-braintree in Claude Code to create your first brain.')
+    } else if (agentMode === 'codex') {
+      console.log('  Start BrainTree with --agent codex and ask Codex to scaffold your brain files.')
+    } else {
+      console.log('  Create a BrainTree folder with BRAIN-INDEX.md, CLAUDE.md, and Handoffs/ to get started.')
+    }
     return
   }
   const config = JSON.parse(fs.readFileSync(configFile, 'utf8'))
   const brains = config.brains || []
   if (brains.length === 0) {
     console.log('  No brains registered yet.')
-    console.log('  Run /init-braintree in Claude Code to create your first brain.')
+    if (agentMode === 'claude') {
+      console.log('  Run /init-braintree in Claude Code to create your first brain.')
+    } else if (agentMode === 'codex') {
+      console.log('  Start BrainTree with --agent codex and ask Codex to scaffold your brain files.')
+    } else {
+      console.log('  Create a BrainTree folder with BRAIN-INDEX.md, CLAUDE.md, and Handoffs/ to get started.')
+    }
     return
   }
   console.log(`  Registered brains (${brains.length}):`)
@@ -146,8 +210,18 @@ async function main() {
     return
   }
 
+  let agentMode: AgentMode
+  try {
+    agentMode = parseAgentMode(args)
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err))
+    showHelp()
+    process.exit(1)
+    return
+  }
+
   if (args.includes('status')) {
-    showStatus()
+    showStatus(agentMode)
     return
   }
 
@@ -155,19 +229,12 @@ async function main() {
   const portIdx = args.indexOf('--port')
   const preferredPort = portIdx >= 0 ? parseInt(args[portIdx + 1], 10) : 3000
 
-  // Step 1: Ensure config
   ensureConfigDir()
 
-  // Step 2: Install commands
-  const commandCount = await installCommands()
-
-  // Step 3: Find port
+  const installResult = await installAgentIntegration(agentMode)
   const port = await findFreePort(preferredPort)
-
-  // Step 4: Save server config (so init-braintree can discover the port)
   saveServerConfig(port)
 
-  // Step 5: Start the web server
   const webDir = path.join(__dirname, '..', '..', 'web')
   const serverScript = path.join(webDir, 'src', 'server', 'custom-server.ts')
 
@@ -204,13 +271,11 @@ async function main() {
     process.exit(1)
   })
 
-  // Wait for server to start, then show welcome and open browser
   setTimeout(() => {
-    showWelcome(port, commandCount)
+    showWelcome(port, installResult)
     if (!noOpen) openBrowser(`http://localhost:${port}/brains`)
   }, 2000)
 
-  // Forward signals to child and clean up
   const cleanup = () => {
     cleanupServerConfig()
     child.kill('SIGINT')

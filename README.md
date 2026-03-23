@@ -6,7 +6,7 @@
 
 **Give your AI agent a brain.**
 
-A local-first project management system designed for AI agents. One command creates a structured knowledge base with departments, execution plans, agent personas, and 8 slash commands. Your AI stops guessing and starts executing.
+A local-first project management system designed for AI agents. One command starts a structured knowledge base with departments, execution plans, agent personas, and a live viewer. Your AI stops guessing and starts executing.
 
 [![npm version](https://img.shields.io/npm/v/brain-tree-os.svg)](https://www.npmjs.com/package/brain-tree-os)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue?logo=typescript&logoColor=white)](https://typescriptlang.org)
@@ -14,7 +14,7 @@ A local-first project management system designed for AI agents. One command crea
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D20-green?logo=node.js&logoColor=white)](https://nodejs.org)
 
-[Quick Start](#-quick-start) · [The Problem](#-the-problem) · [How It Works](#-how-it-works) · [Commands](#-commands) · [Workflow](#-the-workflow) · [Contributing](CONTRIBUTING.md)
+[Quick Start](#-quick-start) · [The Problem](#-the-problem) · [How It Works](#-how-it-works) · [Claude Commands](#-claude-commands) · [Codex Workflow](#-codex-workflow) · [Contributing](CONTRIBUTING.md)
 
 <img src="docs/screenshots/demo-brain.png" alt="BrainTree OS - Brain viewer" width="756" />
 
@@ -41,12 +41,20 @@ AI coding assistants are powerful, but they have no memory between sessions. Eve
 
 ## Quick Start
 
-> **Requires [Node.js 20+](https://nodejs.org) and [Claude Code](https://docs.anthropic.com/en/docs/claude-code)**
+> **Requires [Node.js 20+](https://nodejs.org) and either Claude Code or Codex**
 
 ### 1. Start the brain viewer
 
+For Claude Code:
+
 ```bash
 npx brain-tree-os
+```
+
+For Codex:
+
+```bash
+npx brain-tree-os --agent codex
 ```
 
 This starts a local web server and opens a brain viewer in your browser. A demo brain is included so you can explore immediately.
@@ -55,9 +63,11 @@ This starts a local web server and opens a brain viewer in your browser. A demo 
 
 ### 2. Create your brain
 
+**Claude Code workflow**
+
 Open Claude Code in any project directory and run:
 
-```
+```text
 /init-braintree
 ```
 
@@ -65,35 +75,58 @@ An interactive wizard asks about your project and generates a complete brain str
 
 <img src="docs/screenshots/claude-wizard.png" alt="BrainTree OS - Init wizard in Claude Code" width="756" />
 
+**Codex workflow**
+
+Open Codex in any project directory and ask it to scaffold a BrainTree brain. The key files are:
+
+- `.braintree/brain.json`
+- `BRAIN-INDEX.md`
+- `AGENTS.md`
+- `CLAUDE.md`
+- `Execution-Plan.md`
+- `Handoffs/`, `Templates/`, `Assets/`, and your department folders
+
+A good starter prompt is:
+
+```text
+Initialize a BrainTree OS brain for this project. Create .braintree/brain.json, BRAIN-INDEX.md, AGENTS.md, CLAUDE.md, Execution-Plan.md, Handoffs/, Templates/, Assets/, and tailored department notes. Link every note with wikilinks and finish with an initial handoff.
+```
+
+See [docs/codex.md](docs/codex.md) for the full Codex workflow.
+
 ### 3. Start working
 
-```
+**Claude Code**
+
+```text
 /resume-braintree
 ```
 
-Claude reads your brain, shows you what was done last session, what's in progress, and recommends what to tackle next. When you're done:
+Claude reads your brain, shows what was done last session, what is in progress, and what to tackle next. When you are done:
 
-```
+```text
 /wrap-up-braintree
 ```
 
-This updates your brain files, creates a handoff document, and logs your progress. Next session picks up exactly where you left off.
+**Codex**
+
+Start each session by reading `BRAIN-INDEX.md`, `AGENTS.md`, and the latest handoff. End each session by updating the handoff folder and execution plan.
 
 ---
 
 ## How It Works
 
-```
+```text
   You run: npx brain-tree-os
               |
               v
-  +----------------------------+
-  |  CLI                       |
-  |  1. Installs 8 commands    |
-  |     to ~/.claude/commands/ |
-  |  2. Starts Next.js server  |
-  |  3. Opens browser          |
-  +----------------------------+
+  +--------------------------------------+
+  |  CLI                                 |
+  |  1. Installs Claude commands         |
+  |     OR runs in Codex mode            |
+  |  2. Starts Next.js server            |
+  |  3. Opens browser                    |
+  +--------------------------------------+
               |
               v
   +----------------------------+     +--------------------+
@@ -101,16 +134,16 @@ This updates your brain files, creates a handoff document, and logs your progres
   |   - Graph visualization    |     |    .braintree/     |
   |   - File tree browser      |     |    BRAIN-INDEX.md  |
   |   - Markdown viewer        |     |    CLAUDE.md       |
-  |   - Execution plan pane    |     |    00_Company/     |
-  |   - Session timeline       |     |    01_RnD/         |
-  +----------------------------+     |    02_Product/     |
-              |                      |    Execution-Plan/ |
-         WebSocket                   |    Handoffs/       |
+  |   - Execution plan pane    |     |    AGENTS.md       |
+  |   - Session timeline       |     |    Execution-Plan/ |
+  +----------------------------+     |    Handoffs/       |
               |                      +--------------------+
+         WebSocket
+              |
               +--- live updates via chokidar ---+
 ```
 
-When you create or edit files through Claude Code, they appear in the browser instantly. The viewer watches your filesystem and updates the graph, file tree, and content in real time.
+When you create or edit files through Claude Code, Codex, or any other file-writing agent, they appear in the browser instantly. The viewer watches your filesystem and updates the graph, file tree, and content in real time.
 
 ---
 
@@ -118,12 +151,13 @@ When you create or edit files through Claude Code, they appear in the browser in
 
 Every brain is a directory on your filesystem with this structure:
 
-```
+```text
 my-project/
 ├── .braintree/
 │   └── brain.json              # Brain metadata (id, name, description)
 ├── BRAIN-INDEX.md              # Central hub linking to everything
-├── CLAUDE.md                   # AI agent instructions ("brain DNA")
+├── AGENTS.md                   # Codex/repo-specific instructions
+├── CLAUDE.md                   # AI agent instructions (brain DNA)
 ├── Execution-Plan.md           # Build roadmap with phases and steps
 │
 ├── 00_Company/                 # Identity, vision, mission, values
@@ -147,7 +181,7 @@ my-project/
 │   └── handoff-002.md
 ├── Templates/                  # Reusable note templates
 ├── Assets/                     # Images, PDFs, reference files
-└── .claude/agents/             # AI agent persona files
+└── .claude/agents/             # Optional Claude agent persona files
     ├── builder.md
     ├── strategist.md
     └── researcher.md
@@ -157,21 +191,21 @@ my-project/
 
 **BRAIN-INDEX.md** is the central hub. It links to every top-level folder and file. When your AI agent reads this first, it instantly understands the full project structure.
 
-**CLAUDE.md** contains the brain's "DNA": conventions, rules, and instructions that every AI agent follows. Think of it as the team handbook.
+**AGENTS.md** is where Codex or repo-local rules live. It is the right place for repository-specific working instructions when your agent is not using Claude slash commands.
+
+**CLAUDE.md** contains the brain's general "DNA": conventions, rules, and instructions that every AI agent follows. Think of it as the team handbook.
 
 **Wikilinks** (`[[like this]]`) connect files into a knowledge graph. The viewer renders these as interactive nodes and edges. Every file links back to its parent via `> Part of [[ParentIndex]]`, creating a clean hierarchy with no orphan nodes.
 
 **Execution Plan** is a structured build roadmap with phases, steps, and task checklists. Each step has a status (`not_started`, `in_progress`, `completed`, `blocked`) and dependencies on other steps.
 
-**Handoffs** are session continuity documents. Each one captures what was done, decisions made, blockers found, and what to do next. This is what makes `/resume-braintree` so powerful.
-
-**Agent Personas** (in `.claude/agents/`) define specialized AI roles for your project. A builder focuses on code, a strategist on product decisions, a researcher on market analysis. Each has their own instructions and capabilities.
+**Handoffs** are session continuity documents. Each one captures what was done, decisions made, blockers found, and what to do next.
 
 ---
 
-## Commands
+## Claude Commands
 
-BrainTree installs 8 slash commands into Claude Code. These are the core of the workflow.
+When you run BrainTree in Claude mode, it installs 8 slash commands into Claude Code. These remain the core of the Claude-native workflow.
 
 ### `/init-braintree`
 
@@ -186,21 +220,17 @@ A multi-phase interactive wizard that:
 
 The brain appears in the viewer in real time as files are created.
 
-
 ### `/resume-braintree`
 
 **Resume work from where you left off.**
 
-The most important command. Every session starts here. It:
+The most important Claude command. Every session starts here. It:
 1. Reads your full brain context (BRAIN-INDEX, CLAUDE.md, latest handoff, execution plan)
 2. Shows what was accomplished last session
 3. Displays progress bars for each phase
 4. Lists the top unblocked steps ranked by priority
 5. Identifies parallel execution opportunities
 6. Asks what you want to work on
-
-Transforms a vague "what should I do?" into a clear action plan.
-
 
 ### `/wrap-up-braintree`
 
@@ -209,124 +239,40 @@ Transforms a vague "what should I do?" into a clear action plan.
 Creates a bridge to your next session by:
 1. Auditing everything done in the current session
 2. Updating all affected brain files (departments, indexes, execution plan)
-3. Marking execution plan steps as completed/in-progress/blocked
-4. Creating a detailed handoff document with:
-   - Session summary
-   - Files created/modified
-   - Decisions made and their rationale
-   - Open blockers
-   - Recommended next steps
+3. Marking execution plan steps as completed, in progress, or blocked
+4. Creating a detailed handoff document with session summary, decisions, blockers, and next steps
 5. Updating brain indexes to prevent orphan nodes
 
-**This is what makes session continuity work.** Without it, your next `/resume-braintree` wouldn't know what happened.
+### Other Claude commands
 
-### `/status-braintree`
-
-**Full project health dashboard.**
-
-Shows:
-- Execution plan progress bars for each phase
-- Steps in progress, blocked, and ready to start
-- File counts and health per department
-- Knowledge graph stats (total files, wikilinks, orphans)
-- Session timeline from recent handoffs
-- Recommendations for what to fix or tackle next
-
-### `/plan-braintree [step]`
-
-**Break a high-level step into concrete tasks.**
-
-Takes an execution plan step and creates a detailed implementation plan:
-- Numbered tasks with effort estimates (S/M/L)
-- Task dependencies and parallel opportunities
-- Specific files to create or modify
-- Acceptance criteria
-- Saves the plan to your brain for reference
-
-### `/sprint-braintree`
-
-**Plan a week of work.**
-
-Agile-style sprint planning:
-- Analyzes unblocked and in-progress steps
-- Groups work into parallel blocks by theme
-- Creates a day-by-day plan with effort estimates
-- Identifies dependencies and buffer time
-
-### `/sync-braintree`
-
-**Brain health check and auto-repair.**
-
-Audits your brain for:
-- Orphan files (not connected to the graph)
-- Broken wikilinks (pointing to files that don't exist)
-- Empty folders with no content
-- Stale content (TODO markers, outdated info)
-- Execution plan drift
-
-Fixes most issues automatically and asks about ambiguous cases.
-
-### `/feature-braintree [name]`
-
-**Plan and implement a new feature.**
-
-End-to-end feature management:
-1. Creates a feature spec with user stories, requirements, and technical approach
-2. Links it to the execution plan
-3. Breaks it into implementation tasks
-4. Guides you through each task
-5. Updates the brain as you go
+- `/status-braintree` - project health dashboard
+- `/plan-braintree [step]` - break a step into concrete tasks
+- `/sprint-braintree` - plan a week of work
+- `/sync-braintree` - audit and repair brain health
+- `/feature-braintree [name]` - plan and implement a new feature
 
 ---
 
-## The Workflow
+## Codex Workflow
+
+Codex uses the same brain format but works from repository files rather than Claude slash commands.
 
 ### Session 0: Create your brain
 
+```text
+$ npx brain-tree-os --agent codex
+$ codex
+> Initialize a BrainTree OS brain for this project...
 ```
-$ npx brain-tree-os          # Start the viewer
-$ claude                      # Open Claude Code
-> /init-braintree             # Create your brain
-```
-
-The wizard asks questions and builds your brain in real time. Watch it appear in the browser as files are created.
 
 ### Session 1+: The daily loop
 
-```
-> /resume-braintree           # Load context, see progress, pick a task
-> ... work on your project ...
-> /wrap-up-braintree          # Save progress, create handoff
-```
+1. Read `BRAIN-INDEX.md`, `AGENTS.md`, and the latest handoff.
+2. Open the relevant folder index before working.
+3. Make the smallest real change that advances the project.
+4. Update `Handoffs/` and `Execution-Plan.md` before ending the session.
 
-Every resume reads the last handoff. Every wrap-up creates the next one. Context is never lost.
-
-### The power of continuity
-
-Here's what a typical `/resume-braintree` output looks like after 10 sessions:
-
-```
-Session 10 | March 22, 2026
-
-Last session: Built the authentication system (Google + GitHub OAuth),
-deployed to Vercel, fixed DNS routing. See handoff-009.
-
-Progress:
-  Phase 1: Foundation    [==========] 100%  (7/7)
-  Phase 2: Core Build    [======----]  60%  (6/10)
-  Phase 3: Polish        [----------]   0%  (0/5)
-
-In Progress:
-  - Step 2.4: API routes (started yesterday, 3/7 tasks done)
-
-Ready to Start:
-  - Step 2.5: Real-time updates (unblocked by Step 2.4)
-  - Step 2.7: Mobile responsiveness (no dependencies)
-
-What would you like to work on?
-```
-
-Your AI agent has full context. It knows the architecture decisions from Session 3, the bug fix from Session 7, and the blocker identified in Session 9. No re-explaining needed.
+The viewer remains the same. The difference is only how the agent is instructed.
 
 ---
 
@@ -342,7 +288,7 @@ Three-pane layout: file tree on the left, interactive D3.js graph in the center 
 
 ### Real-time Updates
 
-Files created or edited in Claude Code appear in the browser within seconds. The graph grows, the file tree updates, and content refreshes automatically via WebSocket.
+Files created or edited by your AI tool appear in the browser within seconds. The graph grows, the file tree updates, and content refreshes automatically via WebSocket.
 
 ---
 
@@ -353,7 +299,7 @@ BrainTree ships with a demo brain based on **clsh.dev**, a real project built fr
 - Full brain structure with 43 interconnected files
 - Complete execution plan with phases and completed steps
 - Session handoffs showing how the project evolved
-- Department organization (Company, RnD, Product, Marketing, etc.)
+- Department organization (Company, RnD, Product, Marketing, and more)
 
 Explore it at `http://localhost:3000/brains/demo` after running `npx brain-tree-os`.
 
@@ -375,15 +321,15 @@ Explore it at `http://localhost:3000/brains/demo` after running `npx brain-tree-
 2. Browser connects to WebSocket at `/ws`
 3. User selects a brain; server starts watching that brain's directory with chokidar
 4. When files change on disk, server sends `file-changed` events
-5. Browser re-fetches data and updates graph/tree/viewer
+5. Browser re-fetches data and updates graph, tree, and viewer
 
 ### Local data layer
 
 All data comes from the filesystem. No database.
 - **Brain registry**: `~/.braintree-os/brains.json` tracks all registered brains
-- **File scanning**: Recursively finds all `.md` files in a brain directory
-- **Wikilink parsing**: Extracts `[[links]]` from file content to build the graph
-- **Execution plan parsing**: Structured extraction of phases, steps, and tasks from markdown
+- **File scanning**: recursively finds all `.md` files in a brain directory
+- **Wikilink parsing**: extracts `[[links]]` from file content to build the graph
+- **Execution plan parsing**: structured extraction of phases, steps, and tasks from markdown
 
 ---
 
@@ -404,25 +350,25 @@ BrainTree OS and brain-tree.ai use the same brain format. You can start locally 
 ## FAQ
 
 **Do I need Claude Code?**
-The brain viewer works without it, but the 8 slash commands are designed for Claude Code. They're what make the AI-assisted workflow possible.
+No. Claude Code gets the native slash-command workflow, but Codex can use the same brain format through `AGENTS.md`, `BRAIN-INDEX.md`, handoffs, and the execution plan.
 
 **Can I use this with other AI tools?**
-The brain itself is just markdown files and folders. Any AI tool that can read and write files can work with a brain. The slash commands are Claude Code specific, but the brain format is universal.
+Yes. The brain itself is just markdown files and folders. Any AI tool that can read and write files can work with a brain. Claude has the most built-in command support today, but the file format is universal.
 
 **Where does my data go?**
-Nowhere. Everything stays on your local filesystem. BrainTree OS makes zero network requests. No telemetry, no analytics, no cloud sync.
+Nowhere. Everything stays on your local filesystem. BrainTree OS makes zero network requests.
 
 **Can I use my own folder structure?**
 Yes. The init wizard generates a suggested structure, but you can reorganize freely. As long as you maintain wikilinks and the BRAIN-INDEX hub, the graph will work.
 
 **How is this different from Obsidian?**
-Obsidian is a general-purpose note-taking app. BrainTree is purpose-built for AI-assisted project execution. The brain structure, slash commands, execution plan tracking, session handoffs, and agent personas are all designed for a specific workflow: AI and human building a product together.
+Obsidian is a general-purpose note-taking app. BrainTree is purpose-built for AI-assisted project execution. The brain structure, execution plan tracking, session handoffs, and agent guidance are all designed for a specific workflow: AI and human building a product together.
 
 ---
 
 ## Contributing
 
-We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
+We welcome contributions. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 
 ## Security
 
