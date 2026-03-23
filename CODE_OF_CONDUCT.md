@@ -29,7 +29,7 @@ Examples of unacceptable behavior:
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the project team at dev@brain-tree.ai. All complaints will be
+reported to the project maintainers. All complaints will be
 reviewed and investigated.
 
 ## Attribution

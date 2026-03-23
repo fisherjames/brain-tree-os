@@ -46,43 +46,27 @@ export interface Handoff {
 
 // ── Config ───────────────────────────────────────────
 
-const PRIMARY_CONFIG_DIR = path.join(os.homedir(), '.brian')
-const LEGACY_CONFIG_DIR = path.join(os.homedir(), '.braintree-os')
-const CONFIG_FILES = [
-  path.join(LEGACY_CONFIG_DIR, 'brains.json'),
-  path.join(PRIMARY_CONFIG_DIR, 'brains.json'),
-]
+const CONFIG_DIR = path.join(os.homedir(), '.brian')
+const CONFIG_FILE = path.join(CONFIG_DIR, 'brains.json')
 
 interface BrainsConfig {
   brains: LocalBrain[]
 }
 
 export function readBrainsConfig(): BrainsConfig {
-  const merged = new Map<string, LocalBrain>()
-  for (const configFile of CONFIG_FILES) {
-    try {
-      if (!fs.existsSync(configFile)) continue
-      const raw = fs.readFileSync(configFile, 'utf8')
-      const parsed = JSON.parse(raw) as BrainsConfig
-      for (const brain of parsed.brains ?? []) {
-        merged.set(brain.path || brain.id, brain)
-      }
-    } catch {
-      // ignore broken config
-    }
+  try {
+    if (!fs.existsSync(CONFIG_FILE)) return { brains: [] }
+    const raw = fs.readFileSync(CONFIG_FILE, 'utf8')
+    const parsed = JSON.parse(raw) as BrainsConfig
+    return { brains: parsed.brains ?? [] }
+  } catch {
+    return { brains: [] }
   }
-  return { brains: Array.from(merged.values()) }
 }
 
 export function writeBrainsConfig(config: BrainsConfig): void {
-  fs.mkdirSync(PRIMARY_CONFIG_DIR, { recursive: true })
-  fs.writeFileSync(path.join(PRIMARY_CONFIG_DIR, 'brains.json'), JSON.stringify(config, null, 2) + '\n', 'utf8')
-  try {
-    fs.mkdirSync(LEGACY_CONFIG_DIR, { recursive: true })
-    fs.writeFileSync(path.join(LEGACY_CONFIG_DIR, 'brains.json'), JSON.stringify(config, null, 2) + '\n', 'utf8')
-  } catch {
-    // ignore legacy mirror failure
-  }
+  fs.mkdirSync(CONFIG_DIR, { recursive: true })
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2) + '\n', 'utf8')
 }
 
 export function registerBrain(brainPath: string): LocalBrain {
@@ -92,13 +76,10 @@ export function registerBrain(brainPath: string): LocalBrain {
   const existing = config.brains.find((b) => b.path === brainPath)
   if (existing) return existing
 
-  const brainJsonPath = [
-    path.join(brainPath, '.brian', 'brain.json'),
-    path.join(brainPath, '.braintree', 'brain.json'),
-  ].find((candidate) => fs.existsSync(candidate))
+  const brainJsonPath = path.join(brainPath, '.brian', 'brain.json')
   let meta: { id?: string; name?: string; description?: string } = {}
   try {
-    if (brainJsonPath) {
+    if (fs.existsSync(brainJsonPath)) {
       meta = JSON.parse(fs.readFileSync(brainJsonPath, 'utf8'))
     }
   } catch {
@@ -198,9 +179,7 @@ export function parseBrainLinks(brainPath: string, files: BrainFile[]): BrainLin
 
 export function getExecutionSteps(brainPath: string, files: BrainFile[]): ExecutionStep[] {
   const planFiles = files.filter((f) =>
-    isExecutionPlanFile(f.path) ||
-    f.path === 'Commands/Team-Board.md' ||
-    f.path === 'brian/commands/team-board.md'
+    isExecutionPlanFile(f.path) || f.path === 'brian/commands/team-board.md'
   )
   if (planFiles.length === 0) return []
 
@@ -213,7 +192,7 @@ export function getExecutionSteps(brainPath: string, files: BrainFile[]): Execut
       const parsed = parseExecutionPlan(content)
       parsedSteps.push(
         ...parsed.map((step, idx) => ({
-          id: execFile.path === 'Commands/Team-Board.md' || execFile.path === 'brian/commands/team-board.md' ? `team-step-${idx}` : `step-${idx}`,
+          id: execFile.path === 'brian/commands/team-board.md' ? `team-step-${idx}` : `step-${idx}`,
           phase_number: step.phase,
           step_number: Number(step.stepNumber),
           title: step.title,
@@ -237,8 +216,8 @@ export function getExecutionSteps(brainPath: string, files: BrainFile[]): Execut
 export function getHandoffs(brainPath: string, files: BrainFile[]): Handoff[] {
   const handoffFiles = files
     .filter((f) =>
-      ((f.path.startsWith('Handoffs/') && f.path !== 'Handoffs/Handoffs.md') ||
-      (f.path.startsWith('brian/handoffs/') && f.path !== 'brian/handoffs/handoffs.md')) &&
+      f.path.startsWith('brian/handoffs/') &&
+      f.path !== 'brian/handoffs/handoffs.md' &&
       f.path.endsWith('.md')
     )
     .sort((a, b) => b.path.localeCompare(a.path))
@@ -324,18 +303,12 @@ export function getDemoBrainPath(): string {
   ]
 
   for (const candidate of candidates) {
-    if (
-      fs.existsSync(path.join(candidate, '.brian', 'brain.json')) ||
-      fs.existsSync(path.join(candidate, 'brian', 'index.md')) ||
-      fs.existsSync(path.join(candidate, '.braintree', 'brain.json')) ||
-      fs.existsSync(path.join(candidate, 'VAULT-INDEX.md')) ||
-      fs.existsSync(path.join(candidate, 'BRAIN-INDEX.md'))
-    ) {
+    if (fs.existsSync(path.join(candidate, '.brian', 'brain.json')) && fs.existsSync(path.join(candidate, 'brian', 'index.md'))) {
       return candidate
     }
   }
 
-  return candidates[0] // fallback
+  return candidates[0]
 }
 
 export const DEMO_BRAIN: LocalBrain = {

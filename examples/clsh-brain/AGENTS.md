@@ -84,8 +84,8 @@ The Execution Plan defines **Parallel Groups** — steps that can run simultaneo
 
 ### How It Works
 
-1. **`brain-tree-os resume`** identifies the files Codex should load first
-2. **`brain-tree-os plan <step>`** or Codex **`/plan`** is used to break work into concrete tasks
+1. **`brian resume`** identifies the files Codex should load first
+2. **`brian plan <step>`** or Codex **`/plan`** is used to break work into concrete tasks
 3. If multiple tracks are possible, create isolated branches or worktrees outside the brain itself
 4. Work is merged back, then the execution plan and handoff notes are updated
 
@@ -98,7 +98,7 @@ The Execution Plan defines **Parallel Groups** — steps that can run simultaneo
 
 ### Handoff Protocol
 
-Every session MUST end with `brain-tree-os wrap-up` which:
+Every session MUST end with `brian wrap-up` which:
 1. Updates `Execution-Plan.md` step statuses and progress percentages
 2. Updates `VAULT-INDEX.md` with current department statuses
 3. Creates `Handoffs/handoff-YYYY-MM-DD.md` with context for next session
@@ -108,11 +108,11 @@ Every session MUST end with `brain-tree-os wrap-up` which:
 
 | Command | Purpose |
 |---------|---------|
-| `brain-tree-os plan [step]` | Create a linked plan note for a specific step |
-| `brain-tree-os wrap-up` | Complete a session, update vault, create a handoff template |
-| `brain-tree-os resume` | Resume from where you left off |
-| `brain-tree-os sprint` | Plan the week's steps |
-| `brain-tree-os status` | Check progress across all departments |
-| `brain-tree-os sync` | Audit graph health and disconnected notes |
-| `brain-tree-os feature [feature]` | Create a feature planning note |
+| `brian plan [step]` | Create a linked plan note for a specific step |
+| `brian wrap-up` | Complete a session, update vault, create a handoff template |
+| `brian resume` | Resume from where you left off |
+| `brian sprint` | Plan the week's steps |
+| `brian status` | Check progress across all departments |
+| `brian sync` | Audit graph health and disconnected notes |
+| `brian feature [feature]` | Create a feature planning note |
 | Codex `/plan` | Turn the notes above into a concrete implementation plan |

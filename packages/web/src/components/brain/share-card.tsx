@@ -353,7 +353,7 @@ export const ShareCard = forwardRef<HTMLDivElement, ShareCardProps>(
                 letterSpacing: '-0.01em',
               }}
             >
-              brain-tree.ai
+              brian
             </span>
           </div>
           <span

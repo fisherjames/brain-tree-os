@@ -6,8 +6,8 @@
 
 ### How to report
 
-1. **GitHub Security Advisory** (preferred): [Create a private advisory](https://github.com/brain-tree-dev/brain-tree-os/security/advisories/new)
-2. **Email**: dev@brain-tree.ai
+1. **GitHub Security Advisory** on your fork
+2. **Email**: your configured security contact
 
 ### What to include
 
@@ -24,7 +24,7 @@
 
 ## Scope
 
-BrainTree OS runs entirely locally on your machine. The primary security concerns are:
+Brian runs entirely locally on your machine. The primary security concerns are:
 
 - Local file access (the server reads/writes files on your filesystem)
 - WebSocket connections (localhost only)

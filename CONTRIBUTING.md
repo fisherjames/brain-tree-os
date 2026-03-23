@@ -1,12 +1,12 @@
-# Contributing to BrainTree OS
+# Contributing to Brian
 
 Thanks for your interest in contributing! This guide will help you get set up.
 
 ## Development Setup
 
 ```bash
-git clone https://github.com/brain-tree-dev/brain-tree-os
-cd brain-tree-os
+git clone <your fork url>
+cd <your fork directory>
 npm install
 npm run dev
 ```
@@ -16,11 +16,11 @@ The web app runs on `http://localhost:3000`.
 ## Project Structure
 
 ```
-brain-tree-os/
+brian/
 ├── packages/
-│   ├── cli/        # CLI entry point (npx brain-tree-os)
+│   ├── cli/        # CLI entry point (`brian`)
 │   └── web/        # Next.js app (brain viewer, local data layer)
-├── demo/           # Bundled demo brain (43 CLSH files)
+├── demo/           # Bundled demo brian
 ├── examples/       # Full example brains
 └── docs/           # Documentation and screenshots
 ```
@@ -74,7 +74,7 @@ We use [Conventional Commits](https://www.conventionalcommits.org/):
 
 ## Reporting Bugs
 
-Open a [GitHub issue](https://github.com/brain-tree-dev/brain-tree-os/issues/new?template=bug_report.yml) with:
+Open a GitHub issue on your fork with:
 
 - Your environment (OS, Node version, browser)
 - Steps to reproduce

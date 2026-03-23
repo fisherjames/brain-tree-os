@@ -1,98 +1,50 @@
 # Brian For Codex
 
-Brian is a Codex-first repo memory layer built from:
+Brian is the repo memory layer. Codex is the execution engine.
 
-- markdown notes inside the repository
-- a local viewer
-- a small CLI
-
-Use `brian` as the primary command. `brain-tree-os` still works as a compatibility alias.
-
-## Command Split
-
-Codex slash commands handle conversation behavior:
-
-- `/init`
-- `/plan`
-- `/resume`
-- `/status`
-
-Brian shell commands handle project-memory behavior:
+## Brian Commands
 
 - `brian init`
+- `brian migrate`
 - `brian resume`
+- `brian work`
 - `brian wrap-up`
+- `brian end`
 - `brian status`
 - `brian notes`
 - `brian plan`
 - `brian sprint`
 - `brian sync`
 - `brian feature`
-- `brian migrate`
 
-These are complementary, not duplicates.
+## Codex Slash Commands
 
-## Default Repo Layout
+- `/init`
+- `/plan`
+- `/resume`
+- `/status`
 
-```text
-AGENTS.md
-.brian/brain.json
-brian/
-  index.md
-  execution-plan.md
-  product/
-  engineering/
-  operations/
-  commands/
-  agents/
-  handoffs/
-  templates/
-  assets/
-```
+They are complementary:
 
-Brian also reads the older BrainTree layout for compatibility.
+- Codex slash commands control the current conversation.
+- Brian commands control the repo memory and managed workflow.
 
-## Start A Session
+## Managed Session Flow
+
+Start:
 
 ```bash
-brian resume
-codex
+brian work --role backend
 ```
 
-Read the files printed by `brian resume`, then follow `AGENTS.md`.
-
-## End A Session
+End:
 
 ```bash
-brian wrap-up
+brian end --role backend
 ```
 
-Then ask Codex to:
-
-- fill the newest handoff
-- update the relevant brian notes
-- update `brian/execution-plan.md` if progress changed
+The managed skill pack supplies the reusable behavior. Brian notes supply the project memory.
 
 ## Honest Limit
 
-Codex skills help with behavior and specialization. They do not provide a native transport for injecting text into an already-open live Codex thread.
-
-That means:
-- a skill can decide how wrap-up should work
-- a shell command can launch Codex with a wrap-up prompt
-- neither can silently post a new prompt into the exact live thread you already have open
-
-Brian therefore does not pretend to offer a hook or live-thread injection feature that Codex does not document.
-
-## When To Use Repo-Local Workflow Layers
-
-Keep Brian core generic.
-
-If a project wants richer flows such as:
-- `pnpm brain:start`
-- team planning
-- worktree fan-out
-- role-specific skills
-- review or merge orchestration
-
-add those in the managed repo, then mirror status back into `brian/commands/team-board.md` so the viewer can show progress.
+Codex skills do not provide a documented way to inject text into an already-open live Codex thread. Brian therefore uses explicit commands for session start and wrap-up instead of pretending that hidden hooks exist.

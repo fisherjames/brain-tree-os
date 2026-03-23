@@ -5,7 +5,6 @@ import * as fs from 'node:fs'
 
 const BRAINS_JSON = [
   path.join(os.homedir(), '.brian', 'brains.json'),
-  path.join(os.homedir(), '.braintree-os', 'brains.json'),
 ]
 
 export type GlobalListener = () => void

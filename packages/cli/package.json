@@ -1,9 +1,8 @@
 {
-  "name": "brain-tree-os",
+  "name": "brian",
   "version": "0.1.0",
   "description": "Brian CLI for Codex-first project memory",
   "bin": {
-    "brain-tree-os": "./dist/index.js",
     "brian": "./dist/index.js"
   },
   "scripts": {

@@ -256,7 +256,7 @@ function ResumeBrainCta() {
             </button>
           </div>
           <p className="mt-2 text-[10px] leading-relaxed text-text-muted">
-            Generic repos can use <code>brian resume &amp;&amp; codex</code>. The legacy alias <code>brain-tree-os</code> still works.
+            Managed repos can use <code>brian work</code> for the same flow with Brian skills and role context.
           </p>
         </div>
       )}

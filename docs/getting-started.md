@@ -1,25 +1,20 @@
 # Getting Started With Brian
 
-This is the canonical setup flow for the `fisherjames/brain-tree-os` fork after the Brian migration.
-
-## 1. Clone And Build
+## 1. Install
 
 ```bash
-git clone https://github.com/fisherjames/brain-tree-os.git
-cd brain-tree-os
+git clone <your fork url>
+cd <your fork directory>
 npm install
 npm run build
 npm run install:cli
 ```
 
-That installs both:
+Verify:
 
 ```bash
-brian
-brain-tree-os
+brian help
 ```
-
-Use `brian` going forward.
 
 ## 2. Start The Viewer
 
@@ -29,111 +24,78 @@ brian --port 3010
 
 Open [http://localhost:3010/brains](http://localhost:3010/brains).
 
-## 3. Initialize An Existing Project
+## 3. Initialize A Repo
 
 ```bash
-cd /absolute/path/to/your-project
+cd /absolute/path/to/project
 brian init
 ```
 
-The init wizard prompts for:
+The wizard asks for:
 
 - name
 - description
 - preset
-- existing-doc linking
-- package helper scripts
+- whether to link existing docs
+- whether to add package scripts
+- whether to install the managed Brian Codex skill pack
 
-The default scaffold uses:
+For a fully managed setup, choose `codex-team`.
 
-```text
-AGENTS.md
-.brian/brain.json
-brian/
-  index.md
-  execution-plan.md
-  product/
-  engineering/
-  operations/
-  commands/
-  agents/
-  handoffs/
-  templates/
-  assets/
-```
-
-The repo is registered in:
-
-```text
-~/.brian/brains.json
-```
-
-Brian also mirrors registration into `~/.braintree-os/brains.json` so older tooling still sees it.
-
-## 4. Resume Work In Codex
+## 4. Start Work
 
 ```bash
-brian resume
-codex
+brian work
 ```
 
-`brian resume` prints the canonical files to read before doing non-trivial work.
+Or with a role:
 
-## 5. Migrate An Older BrainTree Repo
+```bash
+brian work --role frontend
+brian work --role backend
+brian work --role product
+```
 
-If a repo still uses root-level BrainTree notes:
+This launches Codex with:
+
+- `AGENTS.md`
+- `brian/index.md`
+- `brian/execution-plan.md`
+- the latest handoff
+- the relevant role note
+
+## 5. End Work
+
+```bash
+brian end
+```
+
+Or with a role:
+
+```bash
+brian end --role backend
+```
+
+This creates the next handoff and launches Codex with the managed wrap-up prompt.
+
+## 6. Migrate An Older Repo
+
+If a repo still has an older layout:
 
 ```bash
 brian migrate
 ```
 
-That moves the legacy layout into `brian/` and `.brian/` when the destination paths are still free.
+After migration, Brian operates on `brian/` plus `.brian/`.
 
-## 6. Useful Commands
+## 7. Team And Parallel Work
 
-- `brian status`
-- `brian sync`
-- `brian notes "product"`
-- `brian plan EP-3`
-- `brian sprint`
-- `brian feature "merchant withdrawals"`
-- `brian wrap-up`
+For multi-role work:
 
-## 7. What The Viewer Shows
+- split tasks first
+- assign owners and paths
+- record dependencies and merge order
+- mirror that state into `brian/commands/team-board.md`
+- keep each worker in its own branch or worktree
 
-The viewer reads repo notes and shows:
-
-- graph links from wikilinks
-- file tree
-- execution-plan progress
-- handoff history
-- optional team status from `brian/commands/team-board.md`
-
-The team-board path is important for projects that add repo-local orchestration outside Brian core.
-
-## 8. Recommended Pattern
-
-Keep Brian core responsible for:
-
-- scaffold
-- registry
-- viewer
-- note sync
-- handoff creation
-
-Keep project-specific orchestration in the managed repo, for example:
-
-- `pnpm brain:start`
-- `pnpm brain:plan`
-- `pnpm brain:create`
-- `pnpm brain:run`
-- `pnpm brain:review`
-- `pnpm brain:merge`
-
-Then mirror progress back into `brian/commands/team-board.md`.
-
-## 9. Important Limitation
-
-Brian does not claim native Codex hook parity.
-
-Codex skills are useful for behavior and specialization, but they do not provide a documented way to inject a prompt into an already-open live Codex session. For that reason Brian uses repo files and explicit commands instead of pretending hidden hooks exist.
+Brian improves coordination and visibility. It does not remove the need for good task boundaries.

@@ -1,17 +1,9 @@
 {
-  "name": "brain-tree-os",
+  "name": "brian",
   "version": "0.1.4",
   "description": "Brian viewer and Codex-first project memory for AI-native repos",
   "license": "MIT",
   "author": "Brian",
-  "homepage": "https://github.com/fisherjames/brain-tree-os",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/fisherjames/brain-tree-os.git"
-  },
-  "bugs": {
-    "url": "https://github.com/fisherjames/brain-tree-os/issues"
-  },
   "keywords": [
     "brian",
     "braintree",
@@ -24,7 +16,6 @@
     "open-source"
   ],
   "bin": {
-    "brain-tree-os": "packages/cli/dist/index.js",
     "brian": "packages/cli/dist/index.js"
   },
   "files": [
@@ -55,7 +46,7 @@
     "build": "npm run build --workspace=packages/cli && npm run build --workspace=packages/web",
     "typecheck": "npm run typecheck --workspace=packages/cli && npm run typecheck --workspace=packages/web",
     "install:cli": "npm run build && npm link",
-    "remove:cli": "npm unlink -g brain-tree-os brian"
+    "remove:cli": "npm unlink -g brian"
   },
   "engines": {
     "node": ">=20.0.0"

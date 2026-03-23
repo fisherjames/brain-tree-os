@@ -10,7 +10,7 @@ I got tired of it.
 
 ## the solution
 
-I turned an Obsidian vault into a persistent brain for Codex. Not a prompt template. Not a system message. A full company structure with departments, execution plans, agent personas, and workflow commands, all wired into Codex via `AGENTS.md`, repo notes, and `brain-tree-os`.
+I turned an Obsidian vault into a persistent brain for Codex. Not a prompt template. Not a system message. A full company structure with departments, execution plans, agent personas, and workflow commands, all wired into Codex via `AGENTS.md`, repo notes, and `brian`.
 
 The result: 34 sessions across 6 days. Zero context loss between any of them. Codex picked up exactly where it left off every single time.
 
@@ -42,13 +42,13 @@ The Codex-friendly workflow is:
 
 | Command | What it does |
 |---------|-------------|
-| `brain-tree-os resume` | Reads execution plan + latest handoff, then tells Codex what files to load first |
-| `brain-tree-os wrap-up` | Creates the next handoff template and keeps session continuity explicit |
-| `brain-tree-os plan [step]` | Creates a linked planning note for a specific execution-plan step |
-| `brain-tree-os sprint` | Creates a sprint note from ready and in-progress work |
-| `brain-tree-os status` | Shows the current brain or all registered brains |
-| `brain-tree-os sync` | Audits graph health, broken links, and disconnected notes |
-| `brain-tree-os feature [name]` | Creates a linked feature spec note |
+| `brian resume` | Reads execution plan + latest handoff, then tells Codex what files to load first |
+| `brian wrap-up` | Creates the next handoff template and keeps session continuity explicit |
+| `brian plan [step]` | Creates a linked planning note for a specific execution-plan step |
+| `brian sprint` | Creates a sprint note from ready and in-progress work |
+| `brian status` | Shows the current brain or all registered brains |
+| `brian sync` | Audits graph health, broken links, and disconnected notes |
+| `brian feature [name]` | Creates a linked feature spec note |
 | Codex `/plan` | Turns one of the created notes into an in-chat implementation plan |
 
 ## agent personas
@@ -121,8 +121,8 @@ Each agent works in an isolated git worktree so they don't conflict. The leader 
 4. **Edit `Execution-Plan.md`** with your build steps, dependencies, and parallel groups
 5. **Customize the agents** in `Agents/` for your team structure
 6. **Start a Codex session** in the vault directory
-7. **Run `brain-tree-os resume`** to see what to read next
-8. **End every session with `brain-tree-os wrap-up`** to preserve context
+7. **Run `brian resume`** to see what to read next
+8. **End every session with `brian wrap-up`** to preserve context
 
 The key insight: `AGENTS.md`, the execution plan, and the folder indexes give Codex a repeatable context path. The entire vault becomes Codex's persistent memory.
 

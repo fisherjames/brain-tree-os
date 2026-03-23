@@ -8,13 +8,10 @@ import { spawn } from 'node:child_process'
 import * as net from 'node:net'
 import * as readline from 'node:readline/promises'
 
-const PRIMARY_CONFIG_DIR = path.join(os.homedir(), '.brian')
-const LEGACY_CONFIG_DIR = path.join(os.homedir(), '.braintree-os')
-const CONFIG_DIRS = [PRIMARY_CONFIG_DIR, LEGACY_CONFIG_DIR]
-const BRAINS_JSON = path.join(PRIMARY_CONFIG_DIR, 'brains.json')
-const LEGACY_BRAINS_JSON = path.join(LEGACY_CONFIG_DIR, 'brains.json')
-const SERVER_JSON = path.join(PRIMARY_CONFIG_DIR, 'server.json')
-const LEGACY_SERVER_JSON = path.join(LEGACY_CONFIG_DIR, 'server.json')
+const CONFIG_DIR = path.join(os.homedir(), '.brian')
+const BRAINS_JSON = path.join(CONFIG_DIR, 'brains.json')
+const SERVER_JSON = path.join(CONFIG_DIR, 'server.json')
+const CODEX_SKILLS_DIR = path.join(os.homedir(), '.codex', 'skills')
 
 const VERSION = '0.2.0'
 
@@ -54,10 +51,61 @@ type InitOptions = {
   preset: InitPreset
   linkExistingDocs: boolean
   addPackageScripts: boolean
+  installSkills: boolean
+}
+
+type BrainRoleName =
+  | 'general'
+  | 'founder'
+  | 'product'
+  | 'marketing'
+  | 'frontend'
+  | 'backend'
+  | 'mobile'
+  | 'ops'
+
+type BrianRole = {
+  skills: string[]
+  notePath: string
+}
+
+const BRIAN_ROLES: Record<BrainRoleName, BrianRole> = {
+  general: {
+    skills: ['$brian-core'],
+    notePath: 'brian/agents/project-operator.md',
+  },
+  founder: {
+    skills: ['$brian-core', '$brian-founder-ceo'],
+    notePath: 'brian/agents/founder-ceo.md',
+  },
+  product: {
+    skills: ['$brian-core', '$brian-product-lead'],
+    notePath: 'brian/agents/product-lead.md',
+  },
+  marketing: {
+    skills: ['$brian-core', '$brian-growth-marketing'],
+    notePath: 'brian/agents/growth-marketing.md',
+  },
+  frontend: {
+    skills: ['$brian-core', '$brian-frontend-engineer'],
+    notePath: 'brian/agents/frontend-engineer.md',
+  },
+  backend: {
+    skills: ['$brian-core', '$brian-backend-engineer'],
+    notePath: 'brian/agents/backend-engineer.md',
+  },
+  mobile: {
+    skills: ['$brian-core', '$brian-mobile-engineer'],
+    notePath: 'brian/agents/mobile-engineer.md',
+  },
+  ops: {
+    skills: ['$brian-core', '$brian-devops-release'],
+    notePath: 'brian/agents/devops-release.md',
+  },
 }
 
 function ensureConfigDir() {
-  fs.mkdirSync(PRIMARY_CONFIG_DIR, { recursive: true })
+  fs.mkdirSync(CONFIG_DIR, { recursive: true })
   if (!fs.existsSync(BRAINS_JSON)) {
     fs.writeFileSync(BRAINS_JSON, JSON.stringify({ brains: [] }, null, 2) + '\n')
   }
@@ -65,34 +113,18 @@ function ensureConfigDir() {
 
 function readBrainsConfig(): BrainsConfig {
   ensureConfigDir()
-  const merged = new Map<string, BrainEntry>()
-
-  for (const configPath of [LEGACY_BRAINS_JSON, BRAINS_JSON]) {
-    try {
-      if (!fs.existsSync(configPath)) continue
-      const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'))
-      const brains = Array.isArray(parsed.brains) ? parsed.brains : []
-      for (const brain of brains) {
-        const key = brain.path || brain.id
-        if (key) merged.set(key, brain)
-      }
-    } catch {
-      // ignore broken config file
-    }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(BRAINS_JSON, 'utf8'))
+    const brains = Array.isArray(parsed.brains) ? parsed.brains : []
+    return { brains }
+  } catch {
+    return { brains: [] }
   }
-
-  return { brains: Array.from(merged.values()) }
 }
 
 function writeBrainsConfig(config: BrainsConfig) {
   ensureConfigDir()
   fs.writeFileSync(BRAINS_JSON, JSON.stringify(config, null, 2) + '\n')
-  try {
-    fs.mkdirSync(LEGACY_CONFIG_DIR, { recursive: true })
-    fs.writeFileSync(LEGACY_BRAINS_JSON, JSON.stringify(config, null, 2) + '\n')
-  } catch {
-    // ignore legacy mirror failures
-  }
 }
 
 function parseOption(args: string[], name: string): string | undefined {
@@ -157,13 +189,13 @@ function resolveProjectDescription(brainRoot: string, explicitDescription?: stri
   return 'Codex-first Brian workspace for this project.'
 }
 
-function findBrainRoot(startDir: string): string | null {
+function findBrainRoot(startDir: string, includeLegacy: boolean = false): string | null {
   let current = path.resolve(startDir)
   while (true) {
     if (
-      fs.existsSync(path.join(current, 'BRAIN-INDEX.md')) ||
       fs.existsSync(path.join(current, 'brian', 'index.md')) ||
-      fs.existsSync(path.join(current, '.braintree', 'brain.json')) ||
+      (includeLegacy && fs.existsSync(path.join(current, 'BRAIN-INDEX.md'))) ||
+      (includeLegacy && fs.existsSync(path.join(current, '.braintree', 'brain.json'))) ||
       fs.existsSync(path.join(current, '.brian', 'brain.json'))
     ) {
       return current
@@ -176,10 +208,7 @@ function findBrainRoot(startDir: string): string | null {
 }
 
 function readBrainMeta(brainRoot: string): BrainMeta | null {
-  const metaPath = [
-    path.join(brainRoot, '.brian', 'brain.json'),
-    path.join(brainRoot, '.braintree', 'brain.json'),
-  ].find(candidate => fs.existsSync(candidate))
+  const metaPath = path.join(brainRoot, '.brian', 'brain.json')
   if (!metaPath) return null
 
   try {
@@ -189,45 +218,20 @@ function readBrainMeta(brainRoot: string): BrainMeta | null {
   }
 }
 
-function brainDocsRoot(brainRoot: string): string {
-  const brianRoot = path.join(brainRoot, 'brian')
-  if (fs.existsSync(path.join(brianRoot, 'index.md'))) return brianRoot
-  return brainRoot
-}
-
-function brainMetaDir(brainRoot: string): string {
-  if (fs.existsSync(path.join(brainRoot, '.brian')) || fs.existsSync(path.join(brainRoot, 'brian', 'index.md'))) {
-    return path.join(brainRoot, '.brian')
-  }
-  return path.join(brainRoot, '.braintree')
-}
-
-function resolveExistingPath(brainRoot: string, candidates: string[], fallback?: string): string {
-  for (const candidate of candidates) {
-    const absolute = path.join(brainRoot, candidate)
-    if (fs.existsSync(absolute)) return absolute
-  }
-  return path.join(brainRoot, fallback ?? candidates[0])
-}
-
 function rootIndexPath(brainRoot: string): string {
-  return resolveExistingPath(brainRoot, ['brian/index.md', 'BRAIN-INDEX.md'], 'brian/index.md')
+  return path.join(brainRoot, 'brian', 'index.md')
 }
 
 function executionPlanNotePath(brainRoot: string): string {
-  return resolveExistingPath(
-    brainRoot,
-    ['brian/execution-plan.md', 'Execution-Plan.md', 'Execution-Plan/Execution-Plan.md', 'Execution_Plan/Execution_Plan.md'],
-    'brian/execution-plan.md'
-  )
+  return path.join(brainRoot, 'brian', 'execution-plan.md')
 }
 
 function handoffsDirPath(brainRoot: string): string {
-  return resolveExistingPath(brainRoot, ['brian/handoffs', 'Handoffs'], 'brian/handoffs')
+  return path.join(brainRoot, 'brian', 'handoffs')
 }
 
 function commandsDirPath(brainRoot: string): string {
-  return resolveExistingPath(brainRoot, ['brian/commands', 'Commands'], 'brian/commands')
+  return path.join(brainRoot, 'brian', 'commands')
 }
 
 function registerBrain(entry: BrainEntry) {
@@ -254,6 +258,77 @@ function updateFileIfExists(filePath: string, updater: (content: string) => stri
   const updated = updater(current)
   if (updated !== current) {
     fs.writeFileSync(filePath, updated)
+  }
+}
+
+function getRole(roleName?: string): BrianRole {
+  const key = (roleName ?? 'general') as BrainRoleName
+  return BRIAN_ROLES[key] ?? BRIAN_ROLES.general
+}
+
+function writeSkillFile(skillName: string, body: string) {
+  const skillDir = path.join(CODEX_SKILLS_DIR, skillName)
+  fs.mkdirSync(skillDir, { recursive: true })
+  fs.writeFileSync(path.join(skillDir, 'SKILL.md'), body.trim() + '\n')
+}
+
+function installBrianSkills() {
+  fs.mkdirSync(CODEX_SKILLS_DIR, { recursive: true })
+
+  writeSkillFile(
+    'brian-core',
+    `
+# Brian Core
+
+Use this skill for any repo that has a Brian workspace.
+
+## Start Rules
+- Read \`AGENTS.md\`, \`brian/index.md\`, \`brian/execution-plan.md\`, and the latest handoff in \`brian/handoffs/\` before non-trivial work.
+- Open the relevant folder index in \`brian/product/\`, \`brian/engineering/\`, \`brian/operations/\`, \`brian/commands/\`, or \`brian/agents/\` before editing.
+
+## Working Rules
+- Keep repo memory in the Brian notes, not only in the chat transcript.
+- Update the relevant Brian note when architecture, workflows, priorities, or risks change.
+- End meaningful work by updating the newest handoff and \`brian/execution-plan.md\` when status changed.
+
+## Parallel Work Safety
+- Split work into role-scoped tasks with explicit paths, dependencies, verification, and merge order before parallel execution.
+- Prefer non-overlapping ownership. If two tasks may touch the same files or contracts, call that out before implementation starts.
+`
+  )
+
+  const roleSkills: Array<[string, string, string, string]> = [
+    ['brian-founder-ceo', 'Brian Founder / CEO', 'brian/agents/founder-ceo.md', 'Use for direction, priorities, positioning, and business tradeoffs. Keep decisions high-signal and explicit about tradeoffs.'],
+    ['brian-product-lead', 'Brian Product Lead', 'brian/agents/product-lead.md', 'Use for requirements, scope control, rollout decisions, and acceptance criteria.'],
+    ['brian-growth-marketing', 'Brian Growth / Marketing', 'brian/agents/growth-marketing.md', 'Use for messaging, launches, funnels, lifecycle copy, and brand consistency.'],
+    ['brian-frontend-engineer', 'Brian Frontend Engineer', 'brian/agents/frontend-engineer.md', 'Use for browser UI, design systems, interaction flows, and rendering behavior.'],
+    ['brian-backend-engineer', 'Brian Backend Engineer', 'brian/agents/backend-engineer.md', 'Use for APIs, contracts, persistence, jobs, and service boundaries.'],
+    ['brian-mobile-engineer', 'Brian Mobile Engineer', 'brian/agents/mobile-engineer.md', 'Use for native/mobile UX, device behavior, and performance-sensitive paths.'],
+    ['brian-devops-release', 'Brian DevOps / Release', 'brian/agents/devops-release.md', 'Use for environments, CI/CD, observability, deploys, and rollback safety.'],
+    ['brian-team-orchestrator', 'Brian Team Orchestrator', 'brian/commands/team-board.md', 'Use for task decomposition, parallel work ownership, dependency planning, review gates, and merge order.'],
+  ]
+
+  for (const [skillName, title, notePath, purpose] of roleSkills) {
+    writeSkillFile(
+      skillName,
+      `
+# ${title}
+
+${purpose}
+
+## Read First
+- \`AGENTS.md\`
+- \`brian/index.md\`
+- \`brian/execution-plan.md\`
+- the latest handoff in \`brian/handoffs/\`
+- \`${notePath}\`
+
+## Behavior
+- Stay within the scope of this role unless cross-role coordination is required.
+- Record any changed assumptions, workflows, or risks back into the Brian notes.
+- Prefer the smallest realistic verification that proves the role-specific change.
+`
+    )
   }
 }
 
@@ -320,12 +395,7 @@ function findMarkdownFiles(root: string): string[] {
 }
 
 function findExecutionPlanPath(brainRoot: string): string | null {
-  const directCandidates = [
-    path.join(brainRoot, 'brian', 'execution-plan.md'),
-    path.join(brainRoot, 'Execution-Plan.md'),
-    path.join(brainRoot, 'Execution-Plan', 'Execution-Plan.md'),
-    path.join(brainRoot, 'Execution_Plan', 'Execution_Plan.md'),
-  ]
+  const directCandidates = [path.join(brainRoot, 'brian', 'execution-plan.md')]
 
   for (const candidate of directCandidates) {
     if (fs.existsSync(candidate)) return candidate
@@ -535,8 +605,29 @@ function commandPromptSummary(brainRoot: string) {
   console.log('  - brian sprint')
   console.log('  - brian sync')
   console.log('  - brian feature <name>')
-  console.log('  - legacy alias still works: brain-tree-os ...')
+  console.log('  - brian work [--role <role>]')
+  console.log('  - brian end [--role <role>]')
   console.log('')
+}
+
+function buildWorkPrompt(brainRoot: string, roleName?: string): string {
+  const role = getRole(roleName)
+  const roleNote = path.join(brainRoot, role.notePath)
+  return [
+    `Use ${role.skills.join(' and ')} to start this session in ${brainRoot}.`,
+    `Read ${rootIndexPath(brainRoot)}, ${path.join(brainRoot, 'AGENTS.md')}, ${executionPlanNotePath(brainRoot)}, the latest handoff in ${handoffsDirPath(brainRoot)}, and ${roleNote} before doing non-trivial work.`,
+    `Open ${path.join(brainRoot, 'brian', 'commands', 'commands.md')} if it exists and inspect the relevant brian folder index before editing.`,
+    'Keep the work scoped, update the Brian notes when assumptions change, and end with explicit verification.',
+  ].join(' ')
+}
+
+function buildEndPrompt(brainRoot: string, roleName?: string): string {
+  const role = getRole(roleName)
+  return [
+    `Use ${role.skills.join(' and ')} to wrap up this session in ${brainRoot}.`,
+    `Fill the newest handoff in ${handoffsDirPath(brainRoot)} with the session summary, files changed, verification, open risks, and recommended next step.`,
+    `Update ${executionPlanNotePath(brainRoot)} if progress changed and reconcile any Brian notes whose assumptions or workflow guidance are now stale.`,
+  ].join(' ')
 }
 
 async function runInherited(command: string, args: string[], cwd: string = process.cwd()): Promise<number> {
@@ -555,10 +646,8 @@ async function runInherited(command: string, args: string[], cwd: string = proce
 function managedMarkdownRelativePaths(): string[] {
   return [
     'brian/index.md',
-    'BRAIN-INDEX.md',
     'AGENTS.md',
     'brian/execution-plan.md',
-    'Execution-Plan.md',
     path.join('brian', 'product', 'product.md'),
     path.join('brian', 'product', 'project-goals.md'),
     path.join('brian', 'product', 'current-scope.md'),
@@ -582,22 +671,6 @@ function managedMarkdownRelativePaths(): string[] {
     path.join('brian', 'templates', 'handoff-template.md'),
     path.join('brian', 'handoffs', 'handoffs.md'),
     path.join('brian', 'handoffs', 'handoff-000.md'),
-    path.join('01_Product', 'Product.md'),
-    path.join('01_Product', 'Project-Goals.md'),
-    path.join('01_Product', 'Current-Scope.md'),
-    path.join('02_Engineering', 'Engineering.md'),
-    path.join('02_Engineering', 'Architecture.md'),
-    path.join('02_Engineering', 'Codebase-Map.md'),
-    path.join('03_Operations', 'Operations.md'),
-    path.join('03_Operations', 'Runbook.md'),
-    path.join('03_Operations', 'Workflow.md'),
-    path.join('Agents', 'Agents.md'),
-    path.join('Agents', 'Project-Operator.md'),
-    path.join('Assets', 'Assets.md'),
-    path.join('Templates', 'Templates.md'),
-    path.join('Templates', 'Handoff-Template.md'),
-    path.join('Handoffs', 'Handoffs.md'),
-    path.join('Handoffs', 'handoff-000.md'),
   ]
 }
 
@@ -641,6 +714,12 @@ async function resolveInitOptions(brainRoot: string, args: string[]): Promise<In
       ? false
       : undefined
 
+  const explicitInstallSkills = hasFlag(args, '--install-skills')
+    ? true
+    : hasFlag(args, '--no-install-skills')
+      ? false
+      : undefined
+
   const canAddPackageScripts = hasPackageJson(brainRoot)
   const shouldPrompt = !hasFlag(args, '--yes') && Boolean(process.stdin.isTTY && process.stdout.isTTY)
 
@@ -651,6 +730,7 @@ async function resolveInitOptions(brainRoot: string, args: string[]): Promise<In
       preset: defaultPreset,
       linkExistingDocs: explicitLinkExistingDocs ?? defaultPreset === 'codex-team',
       addPackageScripts: canAddPackageScripts && (explicitAddPackageScripts ?? defaultPreset === 'codex-team'),
+      installSkills: explicitInstallSkills ?? defaultPreset === 'codex-team',
     }
   }
 
@@ -674,10 +754,15 @@ async function resolveInitOptions(brainRoot: string, args: string[]): Promise<In
           preset === 'codex-team'
         )
       : false
+    const installSkills = explicitInstallSkills ?? await askYesNo(
+      rl,
+      'Install the managed Brian Codex skill pack',
+      preset === 'codex-team'
+    )
 
     console.log('')
 
-    return { name, description, preset, linkExistingDocs, addPackageScripts }
+    return { name, description, preset, linkExistingDocs, addPackageScripts, installSkills }
   } finally {
     rl.close()
   }
@@ -686,17 +771,7 @@ async function resolveInitOptions(brainRoot: string, args: string[]): Promise<In
 function importableMarkdownFiles(brainRoot: string): string[] {
   const excludedDirs = new Set([
     '.brian',
-    '.braintree',
     'brian',
-    '01_Product',
-    '02_Engineering',
-    '03_Operations',
-    '04_Operations',
-    'Agents',
-    'Assets',
-    'Templates',
-    'Handoffs',
-    'Commands',
     'node_modules',
   ])
   const managed = new Set(managedMarkdownRelativePaths())
@@ -730,8 +805,8 @@ function injectPackageScripts(brainRoot: string, preset: InitPreset) {
   }
 
   if (preset === 'codex-team') {
-    additions['brain:start'] = 'brian resume && codex'
-    additions['brain:end'] = 'brian wrap-up && codex "Fill the newest handoff in brian/handoffs/, update the relevant brian notes, and update brian/execution-plan.md if progress changed."'
+    additions['brain:start'] = 'brian work'
+    additions['brain:end'] = 'brian end'
   }
 
   let changed = false
@@ -977,6 +1052,7 @@ Imported markdown docs from the repository should be linked here when you run in
 - Replace this with the real setup, run, test, and deploy commands for the project.
 - Capture any environment prerequisites or local services.
 ${options.addPackageScripts ? '\n## Helper Commands\n- `pnpm brain:viewer`\n- `pnpm brain:resume`\n- `pnpm brain:status`\n- `pnpm brain:sync`\n- `pnpm brain:wrap`\n- `pnpm brain:notes -- "<scope>"`\n' : ''}
+${options.installSkills ? '\n## Managed Skills\n- Brian installs a shared Codex skill pack under `~/.codex/skills/` for core work, roles, and team orchestration.\n' : ''}
 `)
 
   writeFileIfMissing(path.join(docsRoot, 'operations', 'workflow.md'), `# workflow
@@ -1000,13 +1076,13 @@ ${hasCommands
 
 > Part of [[index]]
 
-This folder defines the repeatable Codex workflow layer for the repository.
+This folder defines the managed Codex workflow layer for the repository.
 
 ## Key Files
 - [[start-loop]]
 - [[plan-loop]]
-- [[notes-loop]]
 - [[team-board]]
+- [[notes-loop]]
 - [[end-loop]]
 `)
 
@@ -1016,13 +1092,12 @@ This folder defines the repeatable Codex workflow layer for the repository.
 
 ## Canonical Start
 \`\`\`bash
-brian resume
-codex
-${options.addPackageScripts ? 'pnpm brain:start' : ''}
+brian work
+${options.addPackageScripts ? 'pnpm brain:start' : 'brian work --role frontend'}
 \`\`\`
 
 ## Sequence
-1. Read the core brain files shown by \`brian resume\`.
+1. \`brian work\` launches Codex with the Brian skill pack and startup context.
 2. Open the relevant note index and role note before non-trivial work.
 3. Keep the work scoped and update the brain when decisions change.
 `)
@@ -1063,13 +1138,13 @@ ${options.addPackageScripts ? 'pnpm brain:notes -- "Product"' : ''}
 
 > Part of [[index]]
 
-This note is a viewer-facing placeholder for projects that later add repo-local orchestration or parallel work tracking.
+This note is the viewer-facing coordination surface for managed multi-role work.
 
 ## Phase 99 - Team Board
 
-### Step 99.1: No active team workflow configured
+### Step 99.1: Team workflow ready
 - **Status**: not_started
-- Add repo-local orchestration only if the project genuinely needs it.
+- Mirror task ownership, dependencies, review state, and merge order here whenever work is split across roles.
 `)
 
     writeFileIfMissing(path.join(docsRoot, 'commands', 'end-loop.md'), `# end loop
@@ -1078,15 +1153,15 @@ This note is a viewer-facing placeholder for projects that later add repo-local 
 
 ## Canonical Wrap-Up
 \`\`\`bash
-brian wrap-up
-${options.addPackageScripts ? 'pnpm brain:end' : ''}
+brian end
+${options.addPackageScripts ? 'pnpm brain:end' : 'brian end --role backend'}
 \`\`\`
 
 ## Sequence
 1. Create the next handoff note.
-2. Fill it with what changed, verification, risks, and the next step.
-3. Update [[execution-plan]] if progress changed.
-4. If you use the generated \`pnpm brain:end\` helper, remember it opens a fresh Codex launch rather than writing into a live existing session.
+2. Launch Codex with the managed wrap-up prompt and matching Brian role skills.
+3. Fill it with what changed, verification, risks, and the next step.
+4. Update [[execution-plan]] if progress changed.
 `)
   }
 
@@ -1111,6 +1186,7 @@ Use this agent note for routine implementation work in Codex.
 - Read the current brain state before coding.
 - Prefer targeted edits and explicit verification.
 - Keep decisions in the repository brain, not only in session memory.
+- Use the managed Brian skill pack and role notes instead of rewriting the same prompts by hand.
 `)
 
   if (hasCommands) {
@@ -1205,22 +1281,21 @@ Inspect the real repository and replace the placeholder notes in [[product]], [[
 `)
 
   if (options.addPackageScripts) injectPackageScripts(brainRoot, preset)
+  if (options.installSkills) installBrianSkills()
   if (options.linkExistingDocs) linkExistingDocs(brainRoot)
 
   return meta
 }
 
 function formatViewerUrl(brainId: string): string | null {
-  for (const serverPath of [SERVER_JSON, LEGACY_SERVER_JSON]) {
-    if (!fs.existsSync(serverPath)) continue
-    try {
-      const server = JSON.parse(fs.readFileSync(serverPath, 'utf8'))
-      if (server && server.port) {
-        return `http://localhost:${server.port}/brains/${brainId}`
-      }
-    } catch {
-      // ignore broken server config
+  if (!fs.existsSync(SERVER_JSON)) return null
+  try {
+    const server = JSON.parse(fs.readFileSync(SERVER_JSON, 'utf8'))
+    if (server && server.port) {
+      return `http://localhost:${server.port}/brains/${brainId}`
     }
+  } catch {
+    // ignore broken server config
   }
   return null
 }
@@ -1264,7 +1339,7 @@ function printResume(brainRoot: string) {
   console.log(`  - ${rootIndexPath(brainRoot)}`)
   console.log(`  - ${path.join(brainRoot, 'AGENTS.md')}`)
   console.log(`  - ${executionPlanNotePath(brainRoot)}`)
-  const commandsPath = resolveExistingPath(brainRoot, ['brian/commands/commands.md', 'Commands/Commands.md'])
+  const commandsPath = path.join(brainRoot, 'brian', 'commands', 'commands.md')
   if (fs.existsSync(commandsPath)) {
     console.log(`  - ${commandsPath}`)
   }
@@ -1277,7 +1352,7 @@ function printResume(brainRoot: string) {
 }
 
 function buildNotesPrompt(brainRoot: string, scope: string): string {
-  const commandsPath = resolveExistingPath(brainRoot, ['brian/commands/commands.md', 'Commands/Commands.md'])
+  const commandsPath = path.join(brainRoot, 'brian', 'commands', 'commands.md')
   const commandsText = fs.existsSync(commandsPath)
     ? ` Also read ${commandsPath}.`
     : ''
@@ -1357,10 +1432,7 @@ ${humanNow()}
 `
   )
 
-  const lowerIndex = path.join(handoffDir, 'handoffs.md')
-  const handoffsIndexPath = fs.existsSync(lowerIndex) || handoffDir.includes(`${path.sep}brian${path.sep}`)
-    ? lowerIndex
-    : path.join(handoffDir, 'Handoffs.md')
+  const handoffsIndexPath = path.join(handoffDir, 'handoffs.md')
   writeFileIfMissing(
     handoffsIndexPath,
     '# handoffs\n\n> Part of [[index]]\n\n## Session History\n'
@@ -1401,20 +1473,13 @@ async function openBrowser(url: string) {
 
 function saveServerConfig(port: number) {
   const payload = JSON.stringify({ port, pid: process.pid, startedAt: new Date().toISOString() }, null, 2) + '\n'
-  fs.mkdirSync(PRIMARY_CONFIG_DIR, { recursive: true })
+  fs.mkdirSync(CONFIG_DIR, { recursive: true })
   fs.writeFileSync(SERVER_JSON, payload)
-  try {
-    fs.mkdirSync(LEGACY_CONFIG_DIR, { recursive: true })
-    fs.writeFileSync(LEGACY_SERVER_JSON, payload)
-  } catch {
-    // ignore legacy mirror failures
-  }
 }
 
 function cleanupServerConfig() {
   try {
     if (fs.existsSync(SERVER_JSON)) fs.unlinkSync(SERVER_JSON)
-    if (fs.existsSync(LEGACY_SERVER_JSON)) fs.unlinkSync(LEGACY_SERVER_JSON)
   } catch {
     // ignore cleanup errors
   }
@@ -1434,8 +1499,8 @@ function showWelcome(port: number) {
   console.log('  |                                                             |')
   console.log('  |  1. Open that project in a terminal                         |')
   console.log('  |  2. Run: brian init                                         |')
-  console.log('  |  3. Run: brian resume                                       |')
-  console.log('  |  4. Open Codex in the project                               |')
+  console.log('  |  3. Run: brian work                                         |')
+  console.log('  |  4. Use brian end when you wrap up                          |')
   console.log('  |  5. Optional in Codex: /plan or /status                     |')
   console.log('  |                                                             |')
   console.log('  |  The brain will appear in the viewer automatically.         |')
@@ -1453,19 +1518,18 @@ function showHelp() {
     brian                           Start the viewer
     brian init                      Create a Brian scaffold in the current project
     brian resume                    Show the files to read before working
+    brian work                      Launch Codex with the managed Brian start prompt
     brian wrap-up                   Create the next handoff template
+    brian end                       Create a handoff and launch the managed wrap-up prompt
     brian status                    Show the current brain or all registered brains
     brian notes <scope>             Reconcile downstream notes after top-level edits
-    brian migrate                   Move a legacy BrainTree layout into brian/.brian
+    brian migrate                   Move a legacy layout into brian/.brian
     brian plan [step]               Create a step plan note for an execution-plan step
     brian sprint                    Create a sprint note from ready and in-progress work
     brian sync                      Scan the brain for broken links and disconnected files
     brian feature <name>            Create a feature spec note inside the brain
     brian codex                     Show the Codex slash-command mapping for Brian
     brian help                      Show this help
-
-  Legacy alias:
-    brain-tree-os ...               Still supported for compatibility
 
   Viewer options:
     --port <number>                 Custom port (default: 3000)
@@ -1480,6 +1544,11 @@ function showHelp() {
     --no-link-existing-docs         Skip linking existing markdown docs
     --package-scripts               Add package.json brain helper scripts when possible
     --no-package-scripts            Skip package.json helper scripts
+    --install-skills                Install the managed Brian Codex skill pack
+    --no-install-skills             Skip skill-pack installation
+
+  Session options:
+    --role <general|founder|product|marketing|frontend|backend|mobile|ops>
 `)
 }
 
@@ -1571,9 +1640,15 @@ async function main() {
 
   if (command === 'init') {
     const existingBrain = findBrainRoot(process.cwd())
+    const legacyBrain = !existingBrain ? findBrainRoot(process.cwd(), true) : null
     if (existingBrain) {
       console.log(`  Brian workspace already exists at ${existingBrain}`)
       console.log('  Run `brian resume` to continue working with it.')
+      return
+    }
+    if (legacyBrain) {
+      console.log(`  Legacy brain layout detected at ${legacyBrain}`)
+      console.log('  Run `brian migrate` before creating new Brian scaffolding.')
       return
     }
 
@@ -1601,10 +1676,13 @@ async function main() {
     if (initOptions.addPackageScripts) {
       console.log('  Package scripts: added helper `brain:*` scripts to package.json')
     }
+    if (initOptions.installSkills) {
+      console.log(`  Skill pack: installed managed Brian skills into ${CODEX_SKILLS_DIR}`)
+    }
     if (initOptions.linkExistingDocs) {
       console.log('  Existing docs: linked into brian/operations/existing-docs.md where possible')
     }
-    console.log('  Next: run `brian resume`, then open Codex in this project.')
+    console.log('  Next: run `brian work` to start the first managed Codex session.')
     return
   }
 
@@ -1634,8 +1712,39 @@ async function main() {
     return
   }
 
-  if (command === 'migrate') {
+  if (command === 'work') {
     const brainRoot = findBrainRoot(process.cwd())
+    if (!brainRoot) {
+      console.log('  No brain found in this directory tree.')
+      console.log('  Run `brian init` first.')
+      return
+    }
+
+    const roleName = parseOption(args, '--role')
+    printResume(brainRoot)
+    const exitCode = await runInherited('codex', [buildWorkPrompt(brainRoot, roleName)], brainRoot)
+    if (exitCode !== 0) process.exit(exitCode)
+    return
+  }
+
+  if (command === 'end') {
+    const brainRoot = findBrainRoot(process.cwd())
+    if (!brainRoot) {
+      console.log('  No brain found in this directory tree.')
+      console.log('  Run `brian init` first.')
+      return
+    }
+
+    const roleName = parseOption(args, '--role')
+    const handoffPath = createWrapUp(brainRoot)
+    console.log(`  Created handoff template: ${handoffPath}`)
+    const exitCode = await runInherited('codex', [buildEndPrompt(brainRoot, roleName)], brainRoot)
+    if (exitCode !== 0) process.exit(exitCode)
+    return
+  }
+
+  if (command === 'migrate') {
+    const brainRoot = findBrainRoot(process.cwd(), true)
     if (!brainRoot) {
       console.log('  No brain found in this directory tree.')
       console.log('  Run `brian init` first.')
@@ -1644,7 +1753,7 @@ async function main() {
 
     const moved = migrateLegacyLayout(brainRoot)
     if (moved.length === 0) {
-      console.log('  No legacy BrainTree paths needed migration.')
+      console.log('  No legacy paths needed migration.')
     } else {
       console.log('  Migrated paths:')
       for (const item of moved) console.log(`  - ${item}`)
@@ -1719,9 +1828,6 @@ async function main() {
 
     const operations = resolveFolderContext(brainRoot, [
       { dir: path.join('brian', 'operations'), index: 'operations.md', name: 'operations' },
-      { dir: '03_Operations', index: 'Operations.md', name: 'Operations' },
-      { dir: '04_Operations', index: 'Operations.md', name: 'Operations' },
-      { dir: 'Operations', index: 'Operations.md', name: 'Operations' },
     ])
 
     if (!operations) {
@@ -1771,9 +1877,6 @@ async function main() {
 
     const operations = resolveFolderContext(brainRoot, [
       { dir: path.join('brian', 'operations'), index: 'operations.md', name: 'operations' },
-      { dir: '03_Operations', index: 'Operations.md', name: 'Operations' },
-      { dir: '04_Operations', index: 'Operations.md', name: 'Operations' },
-      { dir: 'Operations', index: 'Operations.md', name: 'Operations' },
     ])
 
     if (!operations) {
@@ -1813,10 +1916,6 @@ async function main() {
 
     const product = resolveFolderContext(brainRoot, [
       { dir: path.join('brian', 'product'), index: 'product.md', name: 'product' },
-      { dir: '01_Product', index: 'Product.md', name: 'Product' },
-      { dir: '00_Vision', index: 'Vision.md', name: 'Vision' },
-      { dir: 'Product', index: 'Product.md', name: 'Product' },
-      { dir: 'Vision', index: 'Vision.md', name: 'Vision' },
     ])
 
     if (!product) {
@@ -1857,7 +1956,7 @@ async function main() {
       const relative = path.relative(brainRoot, file)
       const content = fs.readFileSync(file, 'utf8')
 
-      if (relative !== 'BRAIN-INDEX.md' && relative !== path.join('brian', 'index.md') && !content.includes('> Part of [[')) {
+      if (relative !== path.join('brian', 'index.md') && !content.includes('> Part of [[')) {
         missingParents.push(relative)
       }
 

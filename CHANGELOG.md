@@ -9,9 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Reworked the CLI around a Codex-first flow: `init`, `resume`, `wrap-up`, and `status`
-- Removed viewer prompts and docs that pointed users at the older agent-specific command and hidden-directory workflow
-- Switched brain discovery and card metrics to Codex-facing files such as `AGENTS.md` and `Agents/`
+- Reworked the product around the Brian identity and the `brian/` plus `.brian/` layout
+- Added managed Codex session commands: `work` and `end`
+- Added a managed Brian Codex skill pack and richer role scaffolding in `codex-team` init
+- Removed normal-operation fallbacks to the older layout and older command name
+- Updated the viewer, docs, and bundled assets to Brian branding
 
 ## [0.1.3] - 2026-03-22
 
@@ -39,7 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial open source release
 - Brain viewer with graph view, file tree, markdown viewer, execution plan pane
 - Real-time filesystem watching with WebSocket updates
-- CLI entry point (`npx brain-tree-os`)
+- CLI entry point (`brian`)
 - Initial brain command set and local viewer workflow
 - Bundled demo brain (clsh.dev project, 43 files)
 - Local-only operation (no cloud, no auth, no accounts)

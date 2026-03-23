@@ -64,8 +64,6 @@ export function startWatcher(brainId: string, ws: WebSocket): WatcherHandle {
         // Re-parse handoffs if the change is in handoffs/
         if (
           !changedPath ||
-          changedPath.includes('Handoffs/') ||
-          changedPath.includes('Handoffs\\') ||
           changedPath.includes('brian/handoffs/') ||
           changedPath.includes('brian\\handoffs\\')
         ) {
