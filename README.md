@@ -14,7 +14,7 @@ A local-first project memory system for Codex. It gives an existing repository a
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D20-green?logo=node.js&logoColor=white)](https://nodejs.org)
 
-[Quick Start](#-quick-start) · [Commands](#-commands) · [Brain Format](#-brain-format) · [Workflow](#-workflow) · [Contributing](CONTRIBUTING.md)
+[Getting Started](docs/getting-started.md) · [Commands](#-commands) · [Brain Format](#-brain-format) · [Workflow](#-workflow) · [Contributing](CONTRIBUTING.md)
 
 <img src="docs/screenshots/demo-brain.png" alt="BrainTree OS - Brain viewer" width="756" />
 
@@ -26,31 +26,42 @@ A local-first project memory system for Codex. It gives an existing repository a
 
 > **Requires [Node.js 20+](https://nodejs.org) and Codex**
 
-### 1. Start the viewer
+This README shows the fastest path. For the full fork-local setup, existing-project flow, and daily operating routine, use [docs/getting-started.md](docs/getting-started.md).
+
+### 1. Clone and build this fork
 
 ```bash
-npx brain-tree-os
+git clone https://github.com/fisherjames/brain-tree-os.git
+cd brain-tree-os
+npm install
+npm run build
 ```
 
-This starts the local BrainTree viewer and opens the brains page in your browser.
+### 2. Start the viewer
 
-### 2. Initialize a brain inside an existing project
+```bash
+node packages/cli/dist/index.js
+```
+
+This starts the local BrainTree viewer and opens the brains page in your browser. Use `--port 3010` if `3000` is already in use.
+
+### 3. Initialize a brain inside an existing project
 
 Open a second terminal in the project you want Codex to manage:
 
 ```bash
 cd /path/to/your-project
-npx brain-tree-os init
+node /absolute/path/to/brain-tree-os/packages/cli/dist/index.js init
 ```
 
 That command creates a Codex-first brain scaffold inside the repository and registers it in `~/.braintree-os/brains.json`.
 
-### 3. Resume the project in Codex
+### 4. Resume the project in Codex
 
 Still inside the project:
 
 ```bash
-npx brain-tree-os resume
+node /absolute/path/to/brain-tree-os/packages/cli/dist/index.js resume
 codex
 ```
 
@@ -160,12 +171,19 @@ BrainTree uses `[[wikilinks]]` between notes. The viewer turns those links into 
 
 ## Workflow
 
+The core BrainTree fork gives you:
+- a filesystem brain scaffold
+- a local viewer
+- shell commands for brain-specific workflows
+
+If you want repo-specific wrappers such as `pnpm brain:start`, role skills, or parallel worktree orchestration, add those in the managed project itself. BrainTree core stays smaller on purpose.
+
 ### Session 0
 
 ```bash
-npx brain-tree-os
+node /absolute/path/to/brain-tree-os/packages/cli/dist/index.js
 cd /path/to/project
-npx brain-tree-os init
+node /absolute/path/to/brain-tree-os/packages/cli/dist/index.js init
 codex
 ```
 
@@ -173,7 +191,7 @@ codex
 
 ```bash
 cd /path/to/project
-npx brain-tree-os resume
+node /absolute/path/to/brain-tree-os/packages/cli/dist/index.js resume
 codex
 ```
 
@@ -181,7 +199,7 @@ Then:
 1. Read `BRAIN-INDEX.md`, `AGENTS.md`, `Execution-Plan.md`, and the latest handoff.
 2. Inspect the relevant folder index.
 3. Make a narrow, real change.
-4. Run `npx brain-tree-os wrap-up` before ending the session.
+4. Run `node /absolute/path/to/brain-tree-os/packages/cli/dist/index.js wrap-up` before ending the session.
 
 ---
 
@@ -218,6 +236,7 @@ The web viewer at `localhost:3000` shows your brain visually:
 - markdown viewer
 - execution plan pane
 - session timeline
+- optional `Commands/Team-Board.md` progress rows when a managed project mirrors local orchestration state into the brain
 
 Files created or edited by Codex appear in the browser via filesystem watching.
 

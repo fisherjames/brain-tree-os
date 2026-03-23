@@ -2,6 +2,8 @@
 
 BrainTree is now a Codex-first workflow built from repository files plus a local viewer.
 
+For the full local-fork setup and daily workflow, start with [docs/getting-started.md](getting-started.md).
+
 ## Supported primitives
 
 - Codex `/init`
@@ -41,11 +43,24 @@ Those are not part of the supported Codex workflow for this project.
 
 ## Recommended project routine
 
-1. Start the viewer with `brain-tree-os`.
+1. Start the viewer from the built fork CLI.
 2. Run `brain-tree-os init` once per existing project.
 3. Run `brain-tree-os resume` at the start of every work session.
 4. Open Codex and follow `AGENTS.md`.
 5. Run `brain-tree-os wrap-up` before ending a substantial session.
+
+## Scope Boundary
+
+BrainTree core handles:
+- the brain scaffold
+- the viewer
+- project-brain shell commands
+
+Repo-local workflow layers should handle:
+- custom `pnpm brain:*` wrappers
+- role-specific Codex skills
+- team worktree orchestration
+- any local task board mirrored into committed markdown
 
 ## Expected brain files
 
