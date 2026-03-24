@@ -266,10 +266,17 @@ function getRole(roleName?: string): BrianRole {
   return BRIAN_ROLES[key] ?? BRIAN_ROLES.general
 }
 
-function writeSkillFile(skillName: string, body: string) {
+function writeSkillFile(skillName: string, title: string, description: string, body: string) {
   const skillDir = path.join(CODEX_SKILLS_DIR, skillName)
   fs.mkdirSync(skillDir, { recursive: true })
-  fs.writeFileSync(path.join(skillDir, 'SKILL.md'), body.trim() + '\n')
+  const frontmatter = [
+    '---',
+    `name: ${title}`,
+    `description: ${description}`,
+    '---',
+    '',
+  ].join('\n')
+  fs.writeFileSync(path.join(skillDir, 'SKILL.md'), frontmatter + body.trim() + '\n')
 }
 
 function installBrianSkills() {
@@ -277,6 +284,8 @@ function installBrianSkills() {
 
   writeSkillFile(
     'brian-core',
+    'Brian Core',
+    'Use this skill for any repo that has a Brian workspace.',
     `
 # Brian Core
 
@@ -311,6 +320,8 @@ Use this skill for any repo that has a Brian workspace.
   for (const [skillName, title, notePath, purpose] of roleSkills) {
     writeSkillFile(
       skillName,
+      title,
+      purpose,
       `
 # ${title}
 
@@ -325,6 +336,7 @@ ${purpose}
 
 ## Behavior
 - Stay within the scope of this role unless cross-role coordination is required.
+- Use the exact committed team-board path \`brian/commands/team-board.md\` when that note is needed; do not invent shorter aliases.
 - Record any changed assumptions, workflows, or risks back into the Brian notes.
 - Prefer the smallest realistic verification that proves the role-specific change.
 `
