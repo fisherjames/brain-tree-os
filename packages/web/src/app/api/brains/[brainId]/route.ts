@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getBrain, getDemoBrainPath, DEMO_BRAIN, scanBrainFiles, parseBrainLinks, getExecutionSteps, getHandoffs } from '@/lib/local-data'
+import { getBrain, getDemoBrainPath, DEMO_BRAIN, isDemoEnabled, scanBrainFiles, parseBrainLinks, getExecutionSteps, getHandoffs } from '@/lib/local-data'
 
 export async function GET(
   _request: NextRequest,
@@ -13,6 +13,9 @@ export async function GET(
   let isDemo = false
 
   if (brainId === 'demo') {
+    if (!isDemoEnabled()) {
+      return NextResponse.json({ error: 'Brain not found' }, { status: 404 })
+    }
     brainPath = getDemoBrainPath()
     brainName = DEMO_BRAIN.name
     brainDescription = DEMO_BRAIN.description

@@ -116,6 +116,11 @@ export default function BrainsPageClient({ initialDemos, initialUserBrains }: Br
           Click the demo brain to explore, or create your own to get started.
         </p>
       )}
+      {userBrains.length === 0 && demos.length === 0 && (
+        <p className="animate-fade-up animate-delay-3 mt-6 text-center text-[13px] text-text-muted">
+          No brains registered yet. Run <code className="rounded bg-bg-card px-1 font-mono text-[11px]">brian init</code> inside your repo.
+        </p>
+      )}
     </>
   )
 }

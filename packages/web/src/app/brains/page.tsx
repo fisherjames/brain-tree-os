@@ -1,6 +1,6 @@
 export const dynamic = 'force-dynamic'
 
-import { listBrains, getDemoBrainPath, DEMO_BRAIN, scanBrainFiles } from '@/lib/local-data'
+import { listBrains, getDemoBrainPath, DEMO_BRAIN, isDemoEnabled, scanBrainFiles } from '@/lib/local-data'
 import { buildDepartmentColorMap } from '@/components/brain/department-colors'
 import BrainsPageClient from './brains-page-client'
 
@@ -20,21 +20,24 @@ function countAgentNotes(files: Array<{ path: string }>) {
 }
 
 function getBrainData(): { demos: BrainCardData[]; userBrains: BrainCardData[] } {
-  const demoBrainPath = getDemoBrainPath()
-  const demoFiles = scanBrainFiles(demoBrainPath)
-  const rootFolders = new Set(demoFiles.filter((f) => f.path.includes('/')).map((f) => f.path.split('/')[0]))
-  const colorMap = buildDepartmentColorMap(demoFiles)
-  const rootFolderColors = Array.from(rootFolders).sort().map((f) => colorMap.get(f) ?? '#64748B')
+  const demos: BrainCardData[] = []
+  if (isDemoEnabled()) {
+    const demoBrainPath = getDemoBrainPath()
+    const demoFiles = scanBrainFiles(demoBrainPath)
+    const rootFolders = new Set(demoFiles.filter((f) => f.path.includes('/')).map((f) => f.path.split('/')[0]))
+    const colorMap = buildDepartmentColorMap(demoFiles)
+    const rootFolderColors = Array.from(rootFolders).sort().map((f) => colorMap.get(f) ?? '#64748B')
 
-  const demo: BrainCardData = {
-    id: 'demo',
-    name: DEMO_BRAIN.name,
-    description: DEMO_BRAIN.description,
-    is_demo: true,
-    fileCount: demoFiles.length,
-    departmentCount: rootFolders.size,
-    agentCount: countAgentNotes(demoFiles),
-    rootFolderColors,
+    demos.push({
+      id: 'demo',
+      name: DEMO_BRAIN.name,
+      description: DEMO_BRAIN.description,
+      is_demo: true,
+      fileCount: demoFiles.length,
+      departmentCount: rootFolders.size,
+      agentCount: countAgentNotes(demoFiles),
+      rootFolderColors,
+    })
   }
 
   const userBrains = listBrains().map((brain) => {
@@ -53,7 +56,7 @@ function getBrainData(): { demos: BrainCardData[]; userBrains: BrainCardData[] }
     }
   })
 
-  return { demos: [demo], userBrains }
+  return { demos, userBrains }
 }
 
 export default function BrainsPage() {

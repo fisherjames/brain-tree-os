@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { listBrains, getDemoBrainPath, DEMO_BRAIN, scanBrainFiles } from '@/lib/local-data'
+import { listBrains, getDemoBrainPath, DEMO_BRAIN, isDemoEnabled, scanBrainFiles } from '@/lib/local-data'
 import { buildDepartmentColorMap } from '@/components/brain/department-colors'
 
 function countAgentNotes(files: Array<{ path: string }>) {
@@ -8,22 +8,23 @@ function countAgentNotes(files: Array<{ path: string }>) {
 
 export async function GET() {
   const userBrains = listBrains()
-  const demoBrainPath = getDemoBrainPath()
+  const demos: Array<Record<string, unknown>> = []
+  if (isDemoEnabled()) {
+    const demoBrainPath = getDemoBrainPath()
+    const demoFiles = scanBrainFiles(demoBrainPath)
+    const rootFolders = new Set(demoFiles.filter((f) => f.path.includes('/')).map((f) => f.path.split('/')[0]))
+    const colorMap = buildDepartmentColorMap(demoFiles)
+    const rootFolderColors = Array.from(rootFolders).sort().map((f) => colorMap.get(f) ?? '#64748B')
 
-  // Build demo brain card data
-  const demoFiles = scanBrainFiles(demoBrainPath)
-  const rootFolders = new Set(demoFiles.filter((f) => f.path.includes('/')).map((f) => f.path.split('/')[0]))
-  const colorMap = buildDepartmentColorMap(demoFiles)
-  const rootFolderColors = Array.from(rootFolders).sort().map((f) => colorMap.get(f) ?? '#64748B')
-
-  const demo = {
-    ...DEMO_BRAIN,
-    path: demoBrainPath,
-    fileCount: demoFiles.length,
-    departmentCount: rootFolders.size,
-    agentCount: countAgentNotes(demoFiles),
-    rootFolderColors,
-    is_demo: true,
+    demos.push({
+      ...DEMO_BRAIN,
+      path: demoBrainPath,
+      fileCount: demoFiles.length,
+      departmentCount: rootFolders.size,
+      agentCount: countAgentNotes(demoFiles),
+      rootFolderColors,
+      is_demo: true,
+    })
   }
 
   // Enrich user brains
@@ -41,5 +42,5 @@ export async function GET() {
     }
   })
 
-  return NextResponse.json({ demos: [demo], userBrains: enriched })
+  return NextResponse.json({ demos, userBrains: enriched })
 }

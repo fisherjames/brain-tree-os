@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getBrain, getDemoBrainPath, readBrainFile } from '@/lib/local-data'
+import { getBrain, getDemoBrainPath, isDemoEnabled, readBrainFile } from '@/lib/local-data'
 
 export async function GET(
   request: NextRequest,
@@ -14,6 +14,9 @@ export async function GET(
 
   let brainPath: string
   if (brainId === 'demo') {
+    if (!isDemoEnabled()) {
+      return new NextResponse('Brain not found', { status: 404 })
+    }
     brainPath = getDemoBrainPath()
   } else {
     const brain = getBrain(brainId)

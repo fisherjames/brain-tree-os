@@ -7,6 +7,7 @@ import { FileTree } from './file-tree';
 import TabBar, { type Tab } from './tab-bar';
 import FileViewer from './file-viewer';
 import RightPane from './right-pane';
+import TeamTracker from './team-tracker';
 import { ConnectionStatusIndicator } from './connection-status';
 import { ShareButton } from './share-button';
 import BrainLoader from './brain-loader';
@@ -43,6 +44,7 @@ interface BrainLayoutProps {
 }
 
 const GRAPH_TAB: Tab = { id: 'graph', label: 'Graph View' };
+const TEAM_TAB: Tab = { id: 'team', label: 'Team Tracker' };
 
 export function BrainLayout({
   brainId, files: initialFiles, links: initialLinks,
@@ -71,7 +73,7 @@ export function BrainLayout({
     if (mobile) setSidebarOpen(false);
   }, []);
 
-  const [tabs, setTabs] = useState<Tab[]>([GRAPH_TAB]);
+  const [tabs, setTabs] = useState<Tab[]>([GRAPH_TAB, TEAM_TAB]);
   const [activeTabId, setActiveTabId] = useState('graph');
   const [fileContents, setFileContents] = useState<Map<string, string>>(new Map());
   const [loadingFile, setLoadingFile] = useState<string | null>(null);
@@ -132,14 +134,14 @@ export function BrainLayout({
   }
 
   function handleCloseTab(tabId: string) {
-    if (tabId === 'graph') return;
+    if (tabId === 'graph' || tabId === 'team') return;
     setTabs((prev) => prev.filter((t) => t.id !== tabId));
     if (activeTabId === tabId) setActiveTabId('graph');
   }
 
   function handleCloseOthers(tabId: string) {
-    setTabs((prev) => prev.filter((t) => t.id === 'graph' || t.id === tabId));
-    if (activeTabId !== tabId && activeTabId !== 'graph') setActiveTabId(tabId);
+    setTabs((prev) => prev.filter((t) => t.id === 'graph' || t.id === 'team' || t.id === tabId));
+    if (activeTabId !== tabId && activeTabId !== 'graph' && activeTabId !== 'team') setActiveTabId(tabId);
   }
 
   function handleCloseToRight(tabId: string) {
@@ -219,6 +221,8 @@ export function BrainLayout({
             </div>
           ) : activeTabId === 'graph' ? (
             <GraphView files={files} links={links} onSelectFile={openFileTab} />
+          ) : activeTabId === 'team' ? (
+            <TeamTracker executionSteps={executionSteps} handoffs={handoffs} />
           ) : loadingFile === activeTabId ? (
             <BrainLoader />
           ) : activeFileContent ? (

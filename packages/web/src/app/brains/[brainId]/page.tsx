@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { getBrain, getDemoBrainPath, DEMO_BRAIN, scanBrainFiles, parseBrainLinks, getExecutionSteps, getHandoffs } from '@/lib/local-data'
+import { getBrain, getDemoBrainPath, DEMO_BRAIN, isDemoEnabled, scanBrainFiles, parseBrainLinks, getExecutionSteps, getHandoffs } from '@/lib/local-data'
 import { BrainLayout } from '@/components/brain/brain-layout'
 
 async function getBrainData(brainId: string) {
@@ -10,6 +10,7 @@ async function getBrainData(brainId: string) {
   let isDemo = false
 
   if (brainId === 'demo') {
+    if (!isDemoEnabled()) return null
     brainPath = getDemoBrainPath()
     brainName = DEMO_BRAIN.name
     brainDescription = DEMO_BRAIN.description

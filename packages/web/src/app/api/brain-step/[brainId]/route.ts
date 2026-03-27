@@ -39,8 +39,9 @@ export async function PATCH(
   try {
     let content = fs.readFileSync(fullPath, 'utf8')
 
-    // Parse step index from stepId (format: "step-N")
-    const stepIndex = parseInt(stepId.replace('step-', ''), 10)
+    // Parse step index from stepId suffix (format: "step-...-N")
+    const stepIndexMatch = stepId.match(/-(\d+)$/)
+    const stepIndex = stepIndexMatch ? parseInt(stepIndexMatch[1], 10) : NaN
     if (isNaN(stepIndex)) {
       return NextResponse.json({ error: 'Invalid stepId' }, { status: 400 })
     }

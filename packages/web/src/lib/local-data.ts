@@ -325,6 +325,11 @@ export function getDemoBrainPath(): string {
   return candidates[0]
 }
 
+export function isDemoEnabled(): boolean {
+  const raw = (process.env.BRIAN_SHOW_DEMO ?? process.env.NEXT_PUBLIC_BRIAN_SHOW_DEMO ?? '').toLowerCase()
+  return raw === '1' || raw === 'true' || raw === 'yes'
+}
+
 export const DEMO_BRAIN: LocalBrain = {
   id: 'demo',
   name: 'clsh.dev Brain',
