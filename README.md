@@ -16,6 +16,8 @@ repo/
 └── brian/
     ├── index.md
     ├── execution-plan.md
+    ├── constitution.md
+    ├── specs/
     ├── product/
     ├── engineering/
     ├── operations/
@@ -56,10 +58,16 @@ brian init
 3. Start a managed Codex session:
 
 ```bash
-brian work
+brian next
 ```
 
-4. End a managed Codex session:
+4. For a non-trivial feature:
+
+```bash
+brian mission "Feature Name"
+```
+
+5. End a managed Codex session:
 
 ```bash
 brian end
@@ -99,11 +107,23 @@ The installed skill pack includes:
 - `brian end [--role <role>]` creates the handoff and launches the managed wrap-up prompt
 - `brian status` shows the active brain or all registered brains
 - `brian notes "<scope>"` reconciles downstream notes after top-level edits
+- `brian next` prints one recommended next command
 - `brian plan [step]` creates a linked planning note
 - `brian sprint` creates a sprint note from ready/in-progress work
 - `brian sync` audits links and parent relationships
-- `brian feature "<name>"` creates a linked feature note
+- `brian spec "<name>"` creates a feature spec packet
+- `brian mission "<name>"` creates spec packet + execution/team entries
+- `brian feature "<name>"` aliases to `brian spec`
 - `brian codex` prints the Codex/Brian split
+
+## Workflow Philosophy
+
+Brian now follows a spec-first loop influenced by the strongest parts of `spec-kit` style workflows:
+
+- start from an explicit spec packet (`spec.md`, `plan.md`, `tasks.md`, `review.md`)
+- make execution-plan and team-board updates deterministic from that spec
+- optimize for one clear next action (`brian next`) instead of command guessing
+- keep implementation and operational memory in-repo and link-valid
 
 ## Parallel Work
 

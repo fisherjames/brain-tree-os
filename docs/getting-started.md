@@ -45,10 +45,12 @@ For a fully managed setup, choose `codex-team`.
 ## 4. Start Work
 
 ```bash
-brian work
+brian next
 ```
 
-Or with a role:
+Then run the recommended command (usually `brian work` or `brian plan <step>`).
+
+Or launch with a role directly:
 
 ```bash
 brian work --role frontend
@@ -64,7 +66,20 @@ This launches Codex with:
 - the latest handoff
 - the relevant role note
 
-## 5. End Work
+## 5. Start A Spec-First Feature
+
+```bash
+brian mission "Feature Name"
+```
+
+This creates:
+
+- `brian/specs/spec-<feature>/index.md`
+- `spec.md`, `plan.md`, `tasks.md`, `review.md`
+- a linked execution-plan step
+- a linked team-board step
+
+## 6. End Work
 
 ```bash
 brian end
@@ -78,7 +93,7 @@ brian end --role backend
 
 This creates the next handoff and launches Codex with the managed wrap-up prompt.
 
-## 6. Migrate An Older Repo
+## 7. Migrate An Older Repo
 
 If a repo still has an older layout:
 
@@ -88,7 +103,7 @@ brian migrate
 
 After migration, Brian operates on `brian/` plus `.brian/`.
 
-## 7. Team And Parallel Work
+## 8. Team And Parallel Work
 
 For multi-role work:
 

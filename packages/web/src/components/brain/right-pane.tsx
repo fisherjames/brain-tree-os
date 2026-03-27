@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react';
 import {
   ListChecks,
   Clock,
+  Users,
   ChevronDown,
   ChevronRight,
   CheckSquare,
@@ -13,6 +14,10 @@ import {
   Check,
   Copy,
   Terminal,
+  AlertTriangle,
+  ArrowRight,
+  GitBranch,
+  Compass,
 } from 'lucide-react';
 
 interface ExecutionStep {
@@ -207,7 +212,7 @@ function StepRow({
 function ResumeBrainCta() {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const cmd = 'pnpm brain:start';
+  const cmd = 'brian work';
 
   function handleCopy(e: React.MouseEvent) {
     e.stopPropagation();
@@ -236,7 +241,7 @@ function ResumeBrainCta() {
       {open && (
         <div className="mt-1.5 rounded-xl border border-border bg-bg-section px-3 pb-3 pt-2.5">
           <p className="text-[11px] leading-relaxed text-text-secondary mb-2.5">
-            Pick up where you left off. If this repo uses the local team workflow, run:
+            Pick up where you left off with the managed Brian workflow:
           </p>
           <div className="flex items-center gap-1.5 rounded-lg bg-[#2B2A25] px-3 py-2.5">
             <code className="flex-1 text-[13px] font-mono text-[#E8E6E0]">
@@ -256,7 +261,7 @@ function ResumeBrainCta() {
             </button>
           </div>
           <p className="mt-2 text-[10px] leading-relaxed text-text-muted">
-            Managed repos can use <code>brian work</code> for the same flow with Brian skills and role context.
+            If you prefer package scripts, run <code>npm run brain:start</code> when available.
           </p>
         </div>
       )}
@@ -318,6 +323,222 @@ function ExecutionPlanView({
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function TeamProgressView({ executionSteps }: { executionSteps: ExecutionStep[] }) {
+  const teamSteps = executionSteps
+    .filter((step) => step.phase_number === 99)
+    .sort((a, b) => a.step_number - b.step_number);
+
+  if (teamSteps.length === 0) {
+    return (
+      <div className="flex flex-1 items-center justify-center px-3 py-8">
+        <p className="text-[12px] text-text-muted">No team board steps yet</p>
+      </div>
+    );
+  }
+
+  const blockedSteps = teamSteps.filter((step) => step.status === 'blocked').length;
+  const inProgress = teamSteps.filter((step) => step.status === 'in_progress').length;
+  const completed = teamSteps.filter((step) => step.status === 'completed').length;
+  const blockerCount = teamSteps.reduce((count, step) => {
+    const lines = step.tasks_json ?? [];
+    return count + lines.filter((line) => line.text.toUpperCase().startsWith('BLOCKER:')).length;
+  }, 0);
+
+  return (
+    <div className="flex flex-col gap-2 px-2 py-2">
+      <div className="grid grid-cols-2 gap-1.5">
+        <div className="rounded-md border border-border bg-bg-section px-2 py-1.5">
+          <p className="text-[10px] uppercase tracking-wide text-text-muted">Completed</p>
+          <p className="text-[14px] font-semibold text-leaf">{completed}</p>
+        </div>
+        <div className="rounded-md border border-border bg-bg-section px-2 py-1.5">
+          <p className="text-[10px] uppercase tracking-wide text-text-muted">In Progress</p>
+          <p className="text-[14px] font-semibold" style={{ color: '#E8A830' }}>{inProgress}</p>
+        </div>
+        <div className="rounded-md border border-border bg-bg-section px-2 py-1.5">
+          <p className="text-[10px] uppercase tracking-wide text-text-muted">Blocked Steps</p>
+          <p className="text-[14px] font-semibold" style={{ color: '#D95B5B' }}>{blockedSteps}</p>
+        </div>
+        <div className="rounded-md border border-border bg-bg-section px-2 py-1.5">
+          <p className="text-[10px] uppercase tracking-wide text-text-muted">Blockers</p>
+          <p className="text-[14px] font-semibold" style={{ color: '#D95B5B' }}>{blockerCount}</p>
+        </div>
+      </div>
+
+      {teamSteps.map((step) => {
+        const lines = step.tasks_json ?? [];
+        const blockers = lines.filter((line) => line.text.toUpperCase().startsWith('BLOCKER:'));
+        const next = lines.filter((line) => line.text.toUpperCase().startsWith('NEXT:'));
+        const merge = lines.filter((line) => line.text.toUpperCase().startsWith('MERGE:'));
+        const notes = lines.filter(
+          (line) =>
+            !line.text.toUpperCase().startsWith('BLOCKER:') &&
+            !line.text.toUpperCase().startsWith('NEXT:') &&
+            !line.text.toUpperCase().startsWith('MERGE:')
+        );
+
+        return (
+          <div key={step.id} className="rounded-md border border-border bg-bg-section px-2 py-2">
+            <div className="mb-1 flex items-center gap-2">
+              <span className="text-[11px] text-text-muted">
+                99.{step.step_number}
+              </span>
+              <p className="text-[12px] font-medium text-text">{step.title}</p>
+            </div>
+            <div className="flex flex-col gap-1">
+              {blockers.map((item, idx) => (
+                <p key={`b-${idx}`} className="flex items-start gap-1.5 text-[11px]" style={{ color: '#D95B5B' }}>
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>{item.text.replace(/^BLOCKER:\s*/i, '')}</span>
+                </p>
+              ))}
+              {next.map((item, idx) => (
+                <p key={`n-${idx}`} className="flex items-start gap-1.5 text-[11px] text-text-secondary">
+                  <ArrowRight className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: '#E8A830' }} />
+                  <span>{item.text.replace(/^NEXT:\s*/i, '')}</span>
+                </p>
+              ))}
+              {merge.map((item, idx) => (
+                <p key={`m-${idx}`} className="flex items-start gap-1.5 text-[11px] text-text-secondary">
+                  <GitBranch className="mt-0.5 h-3.5 w-3.5 shrink-0 text-leaf" />
+                  <span>{item.text.replace(/^MERGE:\s*/i, '')}</span>
+                </p>
+              ))}
+              {notes.map((item, idx) => (
+                <p key={`o-${idx}`} className="text-[11px] text-text-muted">
+                  {item.text.replace(/^NOTE:\s*/i, '')}
+                </p>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function MissionControlView({
+  executionSteps,
+  handoffs,
+}: {
+  executionSteps: ExecutionStep[];
+  handoffs: Handoff[];
+}) {
+  const nonTeamSteps = executionSteps.filter((step) => step.phase_number !== 99);
+  const teamSteps = executionSteps
+    .filter((step) => step.phase_number === 99)
+    .sort((a, b) => a.step_number - b.step_number);
+
+  const inProgress = nonTeamSteps.find((step) => step.status === 'in_progress');
+  const blocked = nonTeamSteps.find((step) => step.status === 'blocked');
+  const nextReady = nonTeamSteps.find((step) => step.status === 'not_started');
+
+  const mergeItems = teamSteps.flatMap((step) =>
+    (step.tasks_json ?? []).filter((task) => task.text.toUpperCase().startsWith('MERGE:'))
+  );
+  const blockers = teamSteps.flatMap((step) =>
+    (step.tasks_json ?? []).filter((task) => task.text.toUpperCase().startsWith('BLOCKER:'))
+  );
+  const nextSteps = teamSteps.flatMap((step) =>
+    (step.tasks_json ?? []).filter((task) => task.text.toUpperCase().startsWith('NEXT:'))
+  );
+
+  let recommendation = 'brian work';
+  let reason = 'Continue the active implementation path.';
+  if (blocked) {
+    recommendation = 'brian sync';
+    reason = `${blocked.id} is blocked, so clean link/state drift first.`;
+  } else if (inProgress) {
+    recommendation = 'brian work';
+    reason = `${inProgress.id} is in progress: ${inProgress.title}.`;
+  } else if (nextReady) {
+    recommendation = `brian plan ${nextReady.id}`;
+    reason = `Next planning candidate: ${nextReady.id} ${nextReady.title}.`;
+  }
+
+  const latestHandoff = [...handoffs].sort((a, b) => b.session_number - a.session_number)[0];
+
+  return (
+    <div className="flex flex-col gap-2 px-2 py-2">
+      <ResumeBrainCta />
+
+      <div className="rounded-md border border-border bg-bg-section px-2.5 py-2">
+        <p className="text-[10px] uppercase tracking-wide text-text-muted">Recommended Now</p>
+        <code className="mt-1 block rounded bg-[#2B2A25] px-2 py-1.5 text-[12px] text-[#E8E6E0]">
+          $ {recommendation}
+        </code>
+        <p className="mt-1.5 text-[11px] text-text-secondary">{reason}</p>
+      </div>
+
+      <div className="grid grid-cols-3 gap-1.5">
+        <div className="rounded-md border border-border bg-bg-section px-2 py-1.5">
+          <p className="text-[10px] uppercase tracking-wide text-text-muted">In Progress</p>
+          <p className="text-[14px] font-semibold" style={{ color: '#E8A830' }}>
+            {nonTeamSteps.filter((step) => step.status === 'in_progress').length}
+          </p>
+        </div>
+        <div className="rounded-md border border-border bg-bg-section px-2 py-1.5">
+          <p className="text-[10px] uppercase tracking-wide text-text-muted">Blocked</p>
+          <p className="text-[14px] font-semibold" style={{ color: '#D95B5B' }}>
+            {nonTeamSteps.filter((step) => step.status === 'blocked').length}
+          </p>
+        </div>
+        <div className="rounded-md border border-border bg-bg-section px-2 py-1.5">
+          <p className="text-[10px] uppercase tracking-wide text-text-muted">Done</p>
+          <p className="text-[14px] font-semibold text-leaf">
+            {nonTeamSteps.filter((step) => step.status === 'completed').length}
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-md border border-border bg-bg-section px-2.5 py-2">
+        <p className="text-[10px] uppercase tracking-wide text-text-muted">Merge Order</p>
+        {mergeItems.length === 0 ? (
+          <p className="mt-1 text-[11px] text-text-muted">No merge-order items yet.</p>
+        ) : (
+          <div className="mt-1 flex flex-col gap-1">
+            {mergeItems.slice(0, 4).map((item, idx) => (
+              <p key={`merge-${idx}`} className="flex items-start gap-1.5 text-[11px] text-text-secondary">
+                <GitBranch className="mt-0.5 h-3.5 w-3.5 shrink-0 text-leaf" />
+                <span>{item.text.replace(/^MERGE:\s*/i, '')}</span>
+              </p>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-md border border-border bg-bg-section px-2.5 py-2">
+        <p className="text-[10px] uppercase tracking-wide text-text-muted">Blockers + Next</p>
+        <div className="mt-1 flex flex-col gap-1">
+          {blockers.slice(0, 2).map((item, idx) => (
+            <p key={`block-${idx}`} className="flex items-start gap-1.5 text-[11px]" style={{ color: '#D95B5B' }}>
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{item.text.replace(/^BLOCKER:\s*/i, '')}</span>
+            </p>
+          ))}
+          {nextSteps.slice(0, 2).map((item, idx) => (
+            <p key={`next-${idx}`} className="flex items-start gap-1.5 text-[11px] text-text-secondary">
+              <ArrowRight className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: '#E8A830' }} />
+              <span>{item.text.replace(/^NEXT:\s*/i, '')}</span>
+            </p>
+          ))}
+          {blockers.length === 0 && nextSteps.length === 0 && (
+            <p className="text-[11px] text-text-muted">No team notes yet.</p>
+          )}
+        </div>
+      </div>
+
+      {latestHandoff && (
+        <div className="rounded-md border border-border bg-bg-section px-2.5 py-2">
+          <p className="text-[10px] uppercase tracking-wide text-text-muted">Latest Handoff</p>
+          <p className="mt-1 text-[11px] text-text-secondary">Session {latestHandoff.session_number}</p>
+          <p className="mt-0.5 line-clamp-2 text-[11px] text-text-muted">{latestHandoff.summary}</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -404,7 +625,7 @@ function formatDuration(seconds: number): string {
   return `${mins}m ${secs}s`;
 }
 
-type ViewMode = 'plan' | 'log';
+type ViewMode = 'plan' | 'mission' | 'team' | 'log';
 
 export default function RightPane({
   executionSteps,
@@ -466,6 +687,26 @@ export default function RightPane({
               />
             </button>
             <button
+              onClick={() => setActiveView('mission')}
+              className="rounded p-1 transition-colors hover:bg-text/5"
+              title="Mission Control"
+            >
+              <Compass
+                className="h-4 w-4"
+                style={{ color: activeView === 'mission' ? '#5B9A65' : '#9B9A92' }}
+              />
+            </button>
+            <button
+              onClick={() => setActiveView('team')}
+              className="rounded p-1 transition-colors hover:bg-text/5"
+              title="Team Progress"
+            >
+              <Users
+                className="h-4 w-4"
+                style={{ color: activeView === 'team' ? '#5B9A65' : '#9B9A92' }}
+              />
+            </button>
+            <button
               onClick={() => setActiveView('log')}
               className="rounded p-1 transition-colors hover:bg-text/5"
               title="Session Log"
@@ -489,6 +730,10 @@ export default function RightPane({
               onToggleExpand={toggleExpandStep}
               onToggleStep={onToggleStep}
             />
+          ) : activeView === 'mission' ? (
+            <MissionControlView executionSteps={executionSteps} handoffs={handoffs} />
+          ) : activeView === 'team' ? (
+            <TeamProgressView executionSteps={executionSteps} />
           ) : (
             <SessionLogView
               handoffs={handoffs}

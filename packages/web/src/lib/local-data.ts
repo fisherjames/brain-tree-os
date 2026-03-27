@@ -190,11 +190,14 @@ export function getExecutionSteps(brainPath: string, files: BrainFile[]): Execut
     try {
       const content = fs.readFileSync(fullPath, 'utf8')
       const parsed = parseExecutionPlan(content)
+      const fileIdPrefix = generateFileId(execFile.path)
       parsedSteps.push(
         ...parsed.map((step, idx) => ({
-          id: execFile.path === 'brian/commands/team-board.md' ? `team-step-${idx}` : `step-${idx}`,
+          id: execFile.path === 'brian/commands/team-board.md'
+            ? `team-step-${fileIdPrefix}-${idx}`
+            : `step-${fileIdPrefix}-${idx}`,
           phase_number: step.phase,
-          step_number: Number(step.stepNumber),
+          step_number: normalizeStepNumber(step.stepNumber, step.phase),
           title: step.title,
           status: step.status as ExecutionStep['status'],
           tasks_json: step.tasks.length > 0 ? step.tasks : null,
@@ -209,6 +212,17 @@ export function getExecutionSteps(brainPath: string, files: BrainFile[]): Execut
     if (a.phase_number !== b.phase_number) return a.phase_number - b.phase_number
     return a.step_number - b.step_number
   })
+}
+
+function normalizeStepNumber(raw: string, phase: number): number {
+  const trimmed = raw.trim()
+  const dottedMatch = trimmed.match(/^(\d+)\.(\d+)$/)
+  if (dottedMatch) {
+    const [, dottedPhase, dottedStep] = dottedMatch
+    if (Number(dottedPhase) === phase) return Number(dottedStep)
+  }
+  const numeric = Number(trimmed)
+  return Number.isFinite(numeric) ? numeric : 0
 }
 
 // ── Handoffs ─────────────────────────────────────────

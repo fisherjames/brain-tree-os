@@ -119,9 +119,9 @@ export function parseExecutionPlan(content: string): ParsedStep[] {
           continue
         }
 
-        const taskMatch = subLine.match(/^\s+-\s+\[(x| )\]\s+(.+)/)
+        const taskMatch = subLine.match(/^\s*-\s+\[([xX ]?)\]\s+(.+)/)
         if (taskMatch) {
-          tasks.push({ done: taskMatch[1] === 'x', text: taskMatch[2].trim() })
+          tasks.push({ done: taskMatch[1].toLowerCase() === 'x', text: taskMatch[2].trim() })
         }
         i++
       }

@@ -599,6 +599,217 @@ function updateExecutionPlanStepStatus(executionPlanPath: string, stepId: string
   })
 }
 
+function readLatestHandoffPath(brainRoot: string): string | null {
+  const handoffDir = handoffsDirPath(brainRoot)
+  if (!fs.existsSync(handoffDir)) return null
+  const latest = fs.readdirSync(handoffDir)
+    .filter(file => /^handoff-.*\.md$/.test(file))
+    .sort()
+    .at(-1)
+  return latest ? path.join(handoffDir, latest) : null
+}
+
+function readTeamBoardSteps(brainRoot: string): BrainStep[] {
+  const teamBoardPath = path.join(commandsDirPath(brainRoot), 'team-board.md')
+  if (!fs.existsSync(teamBoardPath)) return []
+  try {
+    return parseExecutionPlanSteps(fs.readFileSync(teamBoardPath, 'utf8'))
+  } catch {
+    return []
+  }
+}
+
+function recommendNextAction(brainRoot: string): { command: string; reason: string } {
+  const parsed = readExecutionPlanSteps(brainRoot)
+  const defaultAction = { command: 'brian work', reason: 'Continue focused implementation work.' }
+  if (!parsed || parsed.steps.length === 0) return defaultAction
+
+  const inProgress = parsed.steps.find(step => step.status === 'in_progress' && step.phase !== 99)
+  if (inProgress) {
+    return {
+      command: `brian work --role frontend`,
+      reason: `${inProgress.id} is already in progress: ${inProgress.title}.`,
+    }
+  }
+
+  const blocked = parsed.steps.find(step => step.status === 'blocked' && step.phase !== 99)
+  if (blocked) {
+    return {
+      command: 'brian sync',
+      reason: `${blocked.id} is blocked. Reconcile blockers and merge order first.`,
+    }
+  }
+
+  const completedIds = new Set(
+    parsed.steps.filter(step => step.status === 'completed').map(step => step.id)
+  )
+  const ready = parsed.steps.find(step => (
+    step.phase !== 99 &&
+    step.status === 'not_started' &&
+    step.dependencies.every(dep => completedIds.has(dep))
+  ))
+  if (ready) {
+    return {
+      command: `brian plan ${ready.id}`,
+      reason: `${ready.id} is the next unblocked step: ${ready.title}.`,
+    }
+  }
+
+  const teamSteps = readTeamBoardSteps(brainRoot)
+  const hasOpenTeamBlocker = teamSteps.some(step =>
+    step.status === 'blocked' || step.title.toLowerCase().includes('block')
+  )
+  if (hasOpenTeamBlocker) {
+    return {
+      command: 'brian sync',
+      reason: 'Team board indicates unresolved blockers.',
+    }
+  }
+
+  return defaultAction
+}
+
+function createSpecPacket(brainRoot: string, featureName: string): { slug: string; dir: string } {
+  const slug = slugify(featureName)
+  const packetDir = path.join(brainRoot, 'brian', 'specs', `spec-${slug}`)
+  fs.mkdirSync(packetDir, { recursive: true })
+
+  writeFileIfMissing(path.join(packetDir, 'index.md'), `# ${featureName}
+
+> Part of [[../specs]]
+
+## Packet
+- [[spec]]
+- [[plan]]
+- [[tasks]]
+- [[review]]
+`)
+
+  writeFileIfMissing(path.join(packetDir, 'spec.md'), `# spec
+
+> Part of [[index]]
+
+## Problem
+Describe the user problem this feature solves.
+
+## Scope
+- In scope:
+- Out of scope:
+
+## Acceptance Criteria
+- [ ] Define measurable completion criteria.
+`)
+
+  writeFileIfMissing(path.join(packetDir, 'plan.md'), `# plan
+
+> Part of [[index]]
+
+## Approach
+- Proposed architecture and sequencing.
+
+## Risks
+- Technical:
+- Product:
+
+## Verification
+- [ ] Build
+- [ ] Focused tests
+`)
+
+  writeFileIfMissing(path.join(packetDir, 'tasks.md'), `# tasks
+
+> Part of [[index]]
+
+- [ ] Break implementation into concrete tasks.
+- [ ] Capture owners and merge order if parallelized.
+`)
+
+  writeFileIfMissing(path.join(packetDir, 'review.md'), `# review
+
+> Part of [[index]]
+
+## Rollout
+
+## Validation
+
+## Follow-ups
+`)
+
+  const specsIndexPath = path.join(brainRoot, 'brian', 'specs', 'specs.md')
+  writeFileIfMissing(specsIndexPath, '# specs\n\n> Part of [[index]]\n\n')
+  updateFileIfExists(specsIndexPath, content => {
+    const link = `- [[spec-${slug}/index]]`
+    return content.includes(link) ? content : `${content.trimEnd()}\n${link}\n`
+  })
+
+  return { slug, dir: packetDir }
+}
+
+function appendMissionExecutionPlan(brainRoot: string, featureName: string, slug: string): string {
+  const executionPlanPath = executionPlanNotePath(brainRoot)
+  writeFileIfMissing(executionPlanPath, '# execution plan\n\n> Part of [[index]]\n')
+  const content = fs.readFileSync(executionPlanPath, 'utf8')
+  const existingHeading = content.match(new RegExp(`###\\s+(EP-\\d+)\\s+Build\\s+${featureName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i'))
+  if (existingHeading) return existingHeading[1]
+
+  const numbers = [...content.matchAll(/###\s+EP-(\d+)\s+/g)].map(match => Number(match[1]))
+  const next = (numbers.length > 0 ? Math.max(...numbers) + 1 : 1)
+  const id = `EP-${next}`
+  const section = [
+    '',
+    `### ${id} Build ${featureName}`,
+    '- **Status**: not_started',
+    '- **Dependencies**: none',
+    `- **Goal**: Deliver spec packet [[spec-${slug}/index]] with verified implementation.`,
+    '',
+  ].join('\n')
+  fs.writeFileSync(executionPlanPath, `${content.trimEnd()}\n${section}`)
+  return id
+}
+
+function appendMissionTeamBoard(brainRoot: string, featureName: string, stepId: string): string {
+  const teamBoardPath = path.join(commandsDirPath(brainRoot), 'team-board.md')
+  writeFileIfMissing(
+    teamBoardPath,
+    '# team board\n\n> Part of [[index]]\n\n## Phase 99 - Team Board\n'
+  )
+  const content = fs.readFileSync(teamBoardPath, 'utf8')
+  const escapedName = featureName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const existing = content.match(new RegExp(`###\\s+Step\\s+(99\\.\\d+)\\s*:\\s*Deliver\\s+${escapedName}`, 'i'))
+  if (existing) return existing[1]
+
+  const nums = [...content.matchAll(/###\s+Step\s+99\.(\d+)\s*:/gi)].map(match => Number(match[1]))
+  const next = (nums.length > 0 ? Math.max(...nums) + 1 : 1)
+  const stepNumber = `99.${next}`
+  const section = [
+    '',
+    `### Step ${stepNumber}: Deliver ${featureName}`,
+    '- **Status**: not_started',
+    `- [ ] NEXT: Create the implementation plan from ${stepId}.`,
+    '- [ ] NEXT: Assign owners and owned paths.',
+    '- [ ] MERGE: Define explicit PR merge order.',
+    '- [ ] BLOCKER: Capture blockers and unblock condition.',
+    '',
+  ].join('\n')
+  fs.writeFileSync(teamBoardPath, `${content.trimEnd()}\n${section}`)
+  return stepNumber
+}
+
+function wikilinkTargetExists(target: string, relativeFiles: string[], byBaseName: Map<string, string>): boolean {
+  const trimmed = target.trim().replace(/\.md$/i, '')
+  if (byBaseName.has(trimmed)) return true
+
+  if (relativeFiles.some(candidate => candidate.replace(/\.md$/i, '') === trimmed)) {
+    return true
+  }
+
+  const targetParts = trimmed.split(/[\\/]/).filter(Boolean)
+  if (targetParts.length <= 1) return false
+  const suffix = targetParts.join('/')
+
+  return relativeFiles.some(candidate => candidate.replace(/\.md$/i, '').endsWith(suffix))
+}
+
 function commandPromptSummary(brainRoot: string) {
   console.log(`  Brain root: ${brainRoot}`)
   console.log('  Codex slash commands you can use inside the chat:')
@@ -613,10 +824,13 @@ function commandPromptSummary(brainRoot: string) {
   console.log('  - brian wrap-up')
   console.log('  - brian status')
   console.log('  - brian notes <scope>')
+  console.log('  - brian next')
   console.log('  - brian plan <step>')
   console.log('  - brian sprint')
   console.log('  - brian sync')
-  console.log('  - brian feature <name>')
+  console.log('  - brian spec <feature>')
+  console.log('  - brian mission <feature>')
+  console.log('  - brian feature <name> (alias for brian spec)')
   console.log('  - brian work [--role <role>]')
   console.log('  - brian end [--role <role>]')
   console.log('')
@@ -658,8 +872,10 @@ async function runInherited(command: string, args: string[], cwd: string = proce
 function managedMarkdownRelativePaths(): string[] {
   return [
     'brian/index.md',
+    'brian/constitution.md',
     'AGENTS.md',
     'brian/execution-plan.md',
+    path.join('brian', 'specs', 'specs.md'),
     path.join('brian', 'product', 'product.md'),
     path.join('brian', 'product', 'project-goals.md'),
     path.join('brian', 'product', 'current-scope.md'),
@@ -673,6 +889,7 @@ function managedMarkdownRelativePaths(): string[] {
     path.join('brian', 'commands', 'commands.md'),
     path.join('brian', 'commands', 'start-loop.md'),
     path.join('brian', 'commands', 'plan-loop.md'),
+    path.join('brian', 'commands', 'spec-loop.md'),
     path.join('brian', 'commands', 'notes-loop.md'),
     path.join('brian', 'commands', 'team-board.md'),
     path.join('brian', 'commands', 'end-loop.md'),
@@ -812,8 +1029,11 @@ function injectPackageScripts(brainRoot: string, preset: InitPreset) {
     'brain:sync': 'brian sync',
     'brain:wrap': 'brian wrap-up',
     'brain:notes': 'brian notes',
+    'brain:next': 'brian next',
     'brain:plan': 'brian plan',
-    'brain:feature': 'brian feature',
+    'brain:spec': 'brian spec',
+    'brain:mission': 'brian mission',
+    'brain:feature': 'brian spec',
   }
 
   if (preset === 'codex-team') {
@@ -912,6 +1132,7 @@ function createBrainScaffold(brainRoot: string, options: InitOptions): BrainMeta
 - [[engineering]] - architecture, codebase structure, and technical decisions
 - [[operations]] - runbooks, workflows, release notes, and maintenance tasks
 ${hasCommands ? '- [[commands]] - repeatable Codex start, planning, note-sync, and wrap-up loops\n' : ''}- [[agents]] - Codex-facing operating rules and reusable role notes
+- [[specs]] - spec-first feature packets with plan, tasks, and review docs
 - [[handoffs]] - session continuity notes
 - [[templates]] - reusable templates for future sessions
 - [[assets]] - screenshots, PDFs, diagrams, and reference files
@@ -919,6 +1140,7 @@ ${hasCommands ? '- [[commands]] - repeatable Codex start, planning, note-sync, a
 ## Root Files
 - \`AGENTS.md\` - Codex instructions for this repository
 - [[execution-plan]] - build order, status, and next priorities
+- [[constitution]] - project-level workflow and quality rules
 
 ## Session Log
 - [[handoff-000]] - Brain initialized on ${created.slice(0, 10)}
@@ -979,6 +1201,29 @@ ${hasCommands ? '- Open [[commands]] and the relevant role note in [[agents]] wh
 - **Goal**: Use the updated brain to drive the next real code change.
 `
   )
+
+  writeFileIfMissing(path.join(docsRoot, 'constitution.md'), `# constitution
+
+> Part of [[index]]
+
+## Principles
+- Start non-trivial work with a spec packet.
+- Keep [[execution-plan]], [[team-board]], and [[handoffs]] in sync.
+- Prefer narrow, verifiable changes over large rewrites.
+- When parallelizing, state ownership, blockers, and merge order explicitly.
+`)
+
+  writeFileIfMissing(path.join(docsRoot, 'specs', 'specs.md'), `# specs
+
+> Part of [[index]]
+
+Spec packets live in this folder. Each packet should include:
+- \`index.md\`
+- \`spec.md\`
+- \`plan.md\`
+- \`tasks.md\`
+- \`review.md\`
+`)
 
   writeFileIfMissing(path.join(docsRoot, 'product', 'product.md'), `# product
 
@@ -1048,6 +1293,8 @@ This area tracks how to run the project, verify changes, and keep session contin
 - [[runbook]]
 - [[workflow]]
 - [[existing-docs]]
+- [[../specs/specs]]
+- [[../constitution]]
 `)
 
   writeFileIfMissing(path.join(docsRoot, 'operations', 'existing-docs.md'), `# existing docs
@@ -1063,7 +1310,7 @@ Imported markdown docs from the repository should be linked here when you run in
 
 - Replace this with the real setup, run, test, and deploy commands for the project.
 - Capture any environment prerequisites or local services.
-${options.addPackageScripts ? '\n## Helper Commands\n- `pnpm brain:viewer`\n- `pnpm brain:resume`\n- `pnpm brain:status`\n- `pnpm brain:sync`\n- `pnpm brain:wrap`\n- `pnpm brain:notes -- "<scope>"`\n' : ''}
+${options.addPackageScripts ? '\n## Helper Commands\n- `npm run brain:viewer`\n- `npm run brain:resume`\n- `npm run brain:status`\n- `npm run brain:next`\n- `npm run brain:sync`\n- `npm run brain:mission -- "Feature Name"`\n- `npm run brain:spec -- "Feature Name"`\n- `npm run brain:wrap`\n- `npm run brain:notes -- "<scope>"`\n' : ''}
 ${options.installSkills ? '\n## Managed Skills\n- Brian installs a shared Codex skill pack under `~/.codex/skills/` for core work, roles, and team orchestration.\n' : ''}
 `)
 
@@ -1073,10 +1320,12 @@ ${options.installSkills ? '\n## Managed Skills\n- Brian installs a shared Codex 
 
 ${hasCommands
   ? `1. Read [[index]], \`AGENTS.md\`, [[execution-plan]], and the latest handoff.
-2. Use [[commands]] for the canonical session workflow loops.
-3. Open the relevant area note before editing code or docs.
-4. Use \`brian notes "<scope>"\` after changing a top-level or workflow note.
-5. Create a new handoff before ending a meaningful session.`
+2. Run \`brian next\` to get one recommended action.
+3. Use [[commands]] for the canonical session workflow loops.
+4. Use \`brian mission "<feature>"\` for non-trivial feature work.
+5. Open the relevant area note before editing code or docs.
+6. Use \`brian notes "<scope>"\` after changing a top-level or workflow note.
+7. Create a new handoff before ending a meaningful session.`
   : `1. Read [[index]], \`AGENTS.md\`, [[execution-plan]], and the latest handoff.
 2. Inspect the relevant area before editing code.
 3. Make a narrow, testable change.
@@ -1093,6 +1342,7 @@ This folder defines the managed Codex workflow layer for the repository.
 ## Key Files
 - [[start-loop]]
 - [[plan-loop]]
+- [[spec-loop]]
 - [[team-board]]
 - [[notes-loop]]
 - [[end-loop]]
@@ -1105,7 +1355,7 @@ This folder defines the managed Codex workflow layer for the repository.
 ## Canonical Start
 \`\`\`bash
 brian work
-${options.addPackageScripts ? 'pnpm brain:start' : 'brian work --role frontend'}
+${options.addPackageScripts ? 'npm run brain:start' : 'brian work --role frontend'}
 \`\`\`
 
 ## Sequence
@@ -1121,13 +1371,30 @@ ${options.addPackageScripts ? 'pnpm brain:start' : 'brian work --role frontend'}
 ## Canonical Planning
 \`\`\`bash
 brian plan EP-2
-${options.addPackageScripts ? 'pnpm brain:plan -- EP-2' : ''}
+${options.addPackageScripts ? 'npm run brain:plan -- EP-2' : ''}
 \`\`\`
 
 ## Sequence
 1. Use \`brian plan\` to create a linked planning note from [[execution-plan]].
 2. Use Codex \`/plan\` inside the chat to refine that step into an implementation sequence.
 3. Record decisions and verification before editing code.
+`)
+
+    writeFileIfMissing(path.join(docsRoot, 'commands', 'spec-loop.md'), `# spec loop
+
+> Part of [[commands]]
+
+## Canonical Spec-First Flow
+\`\`\`bash
+brian mission "Feature Name"
+${options.addPackageScripts ? 'npm run brain:mission -- "Feature Name"' : ''}
+\`\`\`
+
+## Sequence
+1. \`brian mission\` creates or updates a feature packet under [[../specs/specs]].
+2. It appends matching work items in [[../execution-plan]] and [[team-board]].
+3. Use Codex \`/plan\` to refine \`plan.md\` and \`tasks.md\`.
+4. End with verification in \`review.md\` and a handoff note.
 `)
 
     writeFileIfMissing(path.join(docsRoot, 'commands', 'notes-loop.md'), `# notes loop
@@ -1137,7 +1404,7 @@ ${options.addPackageScripts ? 'pnpm brain:plan -- EP-2' : ''}
 ## Canonical Reconciliation
 \`\`\`bash
 brian notes "product"
-${options.addPackageScripts ? 'pnpm brain:notes -- "Product"' : ''}
+${options.addPackageScripts ? 'npm run brain:notes -- "Product"' : ''}
 \`\`\`
 
 ## Sequence
@@ -1155,8 +1422,16 @@ This note is the viewer-facing coordination surface for managed multi-role work.
 ## Phase 99 - Team Board
 
 ### Step 99.1: Team workflow ready
+- **Status**: in_progress
+- [ ] NEXT: Capture active role owners and owned paths for the current sprint.
+- [ ] NEXT: Record review dependencies before opening parallel PRs.
+- [ ] MERGE: List merge order explicitly to avoid integration deadlocks.
+- [ ] BLOCKER: Add unresolved blockers with owner + unblock condition.
+
+### Step 99.2: Session updates
 - **Status**: not_started
-- Mirror task ownership, dependencies, review state, and merge order here whenever work is split across roles.
+- [ ] NOTE: Refresh this board when plan state changes, not only at handoff time.
+- [ ] NOTE: Keep statuses aligned with [[execution-plan]] to preserve viewer accuracy.
 `)
 
     writeFileIfMissing(path.join(docsRoot, 'commands', 'end-loop.md'), `# end loop
@@ -1166,7 +1441,7 @@ This note is the viewer-facing coordination surface for managed multi-role work.
 ## Canonical Wrap-Up
 \`\`\`bash
 brian end
-${options.addPackageScripts ? 'pnpm brain:end' : 'brian end --role backend'}
+${options.addPackageScripts ? 'npm run brain:end' : 'brian end --role backend'}
 \`\`\`
 
 ## Sequence
@@ -1535,11 +1810,14 @@ function showHelp() {
     brian end                       Create a handoff and launch the managed wrap-up prompt
     brian status                    Show the current brain or all registered brains
     brian notes <scope>             Reconcile downstream notes after top-level edits
+    brian next                      Show one recommended next command
     brian migrate                   Move a legacy layout into brian/.brian
     brian plan [step]               Create a step plan note for an execution-plan step
     brian sprint                    Create a sprint note from ready and in-progress work
     brian sync                      Scan the brain for broken links and disconnected files
-    brian feature <name>            Create a feature spec note inside the brain
+    brian spec <name>               Create a spec packet under brian/specs/
+    brian mission <name>            Create spec packet + append execution/team work items
+    brian feature <name>            Alias for brian spec <name>
     brian codex                     Show the Codex slash-command mapping for Brian
     brian help                      Show this help
 
@@ -1796,6 +2074,31 @@ async function main() {
     return
   }
 
+  if (command === 'next') {
+    const brainRoot = findBrainRoot(process.cwd())
+    if (!brainRoot) {
+      console.log('  No brain found in this directory tree.')
+      console.log('  Run `brian init` first.')
+      return
+    }
+
+    const recommendation = recommendNextAction(brainRoot)
+    const latestHandoff = readLatestHandoffPath(brainRoot)
+    const teamSteps = readTeamBoardSteps(brainRoot)
+    const openBlockers = teamSteps.filter(step => step.status === 'blocked').length
+
+    console.log('')
+    console.log(`  Brain root: ${brainRoot}`)
+    if (latestHandoff) console.log(`  Latest handoff: ${latestHandoff}`)
+    console.log(`  Team blockers: ${openBlockers}`)
+    console.log('')
+    console.log('  Recommended next command:')
+    console.log(`  ${recommendation.command}`)
+    console.log(`  Reason: ${recommendation.reason}`)
+    console.log('')
+    return
+  }
+
   if (command === 'plan') {
     const brainRoot = findBrainRoot(process.cwd())
     if (!brainRoot) {
@@ -1912,7 +2215,7 @@ async function main() {
     return
   }
 
-  if (command === 'feature') {
+  if (command === 'spec' || command === 'feature') {
     const brainRoot = findBrainRoot(process.cwd())
     if (!brainRoot) {
       console.log('  No brain found in this directory tree.')
@@ -1922,31 +2225,39 @@ async function main() {
 
     const featureName = args.join(' ').trim()
     if (!featureName) {
-      console.log('  Usage: brian feature <name>')
+      console.log(`  Usage: brian ${command} <name>`)
       return
     }
 
-    const product = resolveFolderContext(brainRoot, [
-      { dir: path.join('brian', 'product'), index: 'product.md', name: 'product' },
-    ])
+    const packet = createSpecPacket(brainRoot, featureName)
+    console.log(`  Spec packet ready: ${packet.dir}`)
+    console.log(`  Next: run \`brian mission "${featureName}"\` to append execution/team tracking.`)
+    return
+  }
 
-    if (!product) {
-      console.log('  No Product or Vision index found to attach the feature spec.')
+  if (command === 'mission') {
+    const brainRoot = findBrainRoot(process.cwd())
+    if (!brainRoot) {
+      console.log('  No brain found in this directory tree.')
+      console.log('  Run `brian init` first.')
       return
     }
 
-    const fileName = `feature-${slugify(featureName)}.md`
-    const featurePath = ensureLinkedNote(
-      product.dir,
-      product.indexPath,
-      product.indexName,
-      fileName,
-      `feature ${featureName}`,
-      `## Status\nPlanning\n\n## Summary\nDescribe the user-facing behavior for ${featureName}.\n\n## Motivation\nWhy this feature matters.\n\n## Requirements\n- [ ] Add the concrete requirements here\n- [ ] Link the relevant notes and code paths\n\n## Suggested Codex Prompt\nUse \`/plan\` in Codex with:\n\n\`/plan Create an implementation plan for the feature "${featureName}". Read brian/index.md, AGENTS.md, brian/execution-plan.md, and this feature spec first.\`\n\n## Open Questions\n- Clarify constraints, tradeoffs, and rollout details.\n`
-    )
+    const featureName = args.join(' ').trim()
+    if (!featureName) {
+      console.log('  Usage: brian mission <name>')
+      return
+    }
 
-    console.log(`  Created feature spec: ${featurePath}`)
-    console.log('  Next in Codex: run `/plan` to turn the spec into execution tasks.')
+    const packet = createSpecPacket(brainRoot, featureName)
+    const stepId = appendMissionExecutionPlan(brainRoot, featureName, packet.slug)
+    const teamStep = appendMissionTeamBoard(brainRoot, featureName, stepId)
+
+    console.log(`  Mission prepared for "${featureName}"`)
+    console.log(`  Spec packet: ${packet.dir}`)
+    console.log(`  Execution plan: ${stepId}`)
+    console.log(`  Team board: Step ${teamStep}`)
+    console.log('  Next: run `brian plan ' + stepId + '` then `brian work`.')
     return
   }
 
@@ -1975,7 +2286,7 @@ async function main() {
       const matches = [...content.matchAll(/\[\[([^\]]+)\]\]/g)]
       for (const match of matches) {
         const target = match[1].trim()
-        if (!byBaseName.has(target) && !relativeFiles.some(candidate => candidate.replace(/\.md$/, '') === target)) {
+        if (!wikilinkTargetExists(target, relativeFiles, byBaseName)) {
           brokenLinks.push({ file: relative, target })
         }
       }

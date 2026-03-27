@@ -12,10 +12,13 @@ Brian is the repo memory layer. Codex is the execution engine.
 - `brian end`
 - `brian status`
 - `brian notes`
+- `brian next`
 - `brian plan`
 - `brian sprint`
 - `brian sync`
-- `brian feature`
+- `brian spec`
+- `brian mission`
+- `brian feature` (alias)
 
 ## Codex Slash Commands
 
