@@ -19,7 +19,18 @@ export function useMcpTeam(brainId: string) {
   const reconnectAttemptsRef = useRef(0)
   const [connected, setConnected] = useState(false)
   const [events, setEvents] = useState<
-    Array<{ at: string; message: string; actor?: string; stage?: string; kind?: 'info' | 'status' | 'blocker' }>
+    Array<{
+      id?: string
+      at: string
+      message: string
+      actor?: string
+      layer?: string
+      stage?: string
+      kind?: 'info' | 'status' | 'blocker'
+      initiativeId?: string
+      discussionId?: string
+      refs?: string[]
+    }>
   >([])
 
   useEffect(() => {
@@ -68,11 +79,16 @@ export function useMcpTeam(brainId: string) {
             if (msg.brainId && String(msg.brainId) !== brainId) return
             setEvents((prev) => [
               {
+                id: typeof msg.id === 'string' ? msg.id : undefined,
                 at: msg.at ?? new Date().toISOString(),
                 message: String(msg.message ?? ''),
                 actor: typeof msg.actor === 'string' ? msg.actor : undefined,
+                layer: typeof msg.layer === 'string' ? msg.layer : undefined,
                 stage: typeof msg.stage === 'string' ? msg.stage : undefined,
                 kind: msg.kind === 'status' || msg.kind === 'blocker' ? msg.kind : 'info',
+                initiativeId: typeof msg.initiativeId === 'string' ? msg.initiativeId : undefined,
+                discussionId: typeof msg.discussionId === 'string' ? msg.discussionId : undefined,
+                refs: Array.isArray(msg.refs) ? msg.refs.filter((r: unknown) => typeof r === 'string') as string[] : [],
               },
               ...prev,
             ].slice(0, 40))

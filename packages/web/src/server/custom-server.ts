@@ -7,6 +7,7 @@ import { spawn, type ChildProcess } from 'child_process'
 import { startWatcher } from './watcher'
 import { addGlobalListener } from './global-watcher'
 import { getBrainPathForId, getSuggestedTask, runTeamMcpCall } from './team-board-mcp'
+import { isV2Method, runV2McpCall } from './v2/mcp'
 
 const dev = process.env.NODE_ENV !== 'production'
 const port = parseInt(process.env.PORT || '3000', 10)
@@ -54,9 +55,17 @@ type TeamObserver = {
   timer: NodeJS.Timeout
 }
 
+type V2Autopilot = {
+  brainId: string
+  startedAt: string
+  ticks: number
+  timer: NodeJS.Timeout
+}
+
 const activeRuns = new Map<string, BrainRun>()
 const activeChildren = new Map<string, ChildProcess>()
 const teamObservers = new Map<string, TeamObserver>()
+const v2Autopilots = new Map<string, V2Autopilot>()
 
 function inferActor(label: string): string {
   const lower = label.toLowerCase()
@@ -101,17 +110,31 @@ function broadcastTeamEvent(
   wss: WebSocketServer,
   brainId: string,
   message: string,
-  options: { actor?: string; stage?: string; kind?: 'info' | 'status' | 'blocker' } = {}
+  options: {
+    id?: string
+    actor?: string
+    layer?: string
+    stage?: string
+    kind?: 'info' | 'status' | 'blocker' | string
+    initiativeId?: string
+    discussionId?: string
+    refs?: string[]
+  } = {}
 ) {
   const payload = JSON.stringify({
     type: 'mcp.event',
     channel: 'team',
+    id: options.id ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     brainId,
     message,
     at: new Date().toISOString(),
     actor: options.actor ?? 'mission-control',
+    layer: options.layer ?? 'system',
     stage: options.stage ?? 'system',
     kind: options.kind ?? 'info',
+    initiativeId: options.initiativeId,
+    discussionId: options.discussionId,
+    refs: options.refs ?? [],
   })
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) client.send(payload)
@@ -212,6 +235,31 @@ function observerStateForBrain(brainId: string) {
     ticks: observer.ticks,
     addedTasks: observer.addedTasks,
     startedAt: observer.startedAt,
+  }
+}
+
+function v2AutopilotStateForBrain(brainId: string) {
+  const autopilot = v2Autopilots.get(brainId)
+  if (!autopilot) return { active: false, startedAt: null as string | null, ticks: 0 }
+  return { active: true, startedAt: autopilot.startedAt, ticks: autopilot.ticks }
+}
+
+function runV2AutopilotTick(wss: WebSocketServer, brainId: string) {
+  const autopilot = v2Autopilots.get(brainId)
+  if (!autopilot) return
+  autopilot.ticks += 1
+  const result = runV2McpCall(brainId, 'workflow.tick', {})
+  if (result.event) {
+    broadcastTeamEvent(wss, brainId, result.event.message, {
+      id: result.event.id,
+      actor: result.event.actor,
+      layer: result.event.layer,
+      stage: result.event.stage,
+      kind: 'status',
+      initiativeId: result.event.initiativeId,
+      discussionId: result.event.discussionId,
+      refs: result.event.refs,
+    })
   }
 }
 
@@ -407,7 +455,17 @@ app.prepare().then(() => {
               const run = activeRuns.get(brainId) ?? null
               const active = activeChildren.has(brainId)
               if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: 'mcp.result', id: callId, ok: true, result: { run, active, observer: observerStateForBrain(brainId) } }))
+                ws.send(JSON.stringify({
+                  type: 'mcp.result',
+                  id: callId,
+                  ok: true,
+                  result: {
+                    run,
+                    active,
+                    observer: observerStateForBrain(brainId),
+                    workflowAutopilot: v2AutopilotStateForBrain(brainId),
+                  },
+                }))
               }
               return
             }
@@ -490,6 +548,88 @@ app.prepare().then(() => {
               return
             }
 
+            if (method === 'workflow.autopilot.state') {
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                  type: 'mcp.result',
+                  id: callId,
+                  ok: true,
+                  result: { message: 'workflow.autopilot.state', autopilot: v2AutopilotStateForBrain(brainId) },
+                }))
+              }
+              return
+            }
+
+            if (method === 'workflow.autopilot.start') {
+              const existing = v2Autopilots.get(brainId)
+              if (!existing) {
+                const timer = setInterval(() => {
+                  try {
+                    runV2AutopilotTick(wss, brainId)
+                  } catch (error) {
+                    broadcastTeamEvent(wss, brainId, `v2_autopilot_failed:${error instanceof Error ? error.message : 'unknown_error'}`, {
+                      actor: 'project-operator',
+                      stage: 'blocker',
+                      kind: 'blocker',
+                    })
+                  }
+                }, 6000)
+                v2Autopilots.set(brainId, {
+                  brainId,
+                  startedAt: new Date().toISOString(),
+                  ticks: 0,
+                  timer,
+                })
+                runV2AutopilotTick(wss, brainId)
+              }
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                  type: 'mcp.result',
+                  id: callId,
+                  ok: true,
+                  result: { message: 'workflow.autopilot.started', autopilot: v2AutopilotStateForBrain(brainId) },
+                }))
+              }
+              return
+            }
+
+            if (method === 'workflow.autopilot.stop') {
+              const active = v2Autopilots.get(brainId)
+              if (active) {
+                clearInterval(active.timer)
+                v2Autopilots.delete(brainId)
+              }
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                  type: 'mcp.result',
+                  id: callId,
+                  ok: true,
+                  result: { message: 'workflow.autopilot.stopped', autopilot: v2AutopilotStateForBrain(brainId) },
+                }))
+              }
+              return
+            }
+
+            if (isV2Method(method)) {
+              const result = runV2McpCall(brainId, method, params)
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'mcp.result', id: callId, ok: true, result }))
+                if (result.event) {
+                  broadcastTeamEvent(wss, brainId, result.event.message, {
+                    id: result.event.id,
+                    actor: result.event.actor,
+                    layer: result.event.layer,
+                    stage: result.event.stage,
+                    kind: 'status',
+                    initiativeId: result.event.initiativeId,
+                    discussionId: result.event.discussionId,
+                    refs: result.event.refs,
+                  })
+                }
+              }
+              return
+            }
+
             const result = runTeamMcpCall(brainId, method, params)
             if (ws.readyState === WebSocket.OPEN) {
               ws.send(JSON.stringify({ type: 'mcp.result', id: callId, ok: true, result }))
@@ -552,7 +692,9 @@ app.prepare().then(() => {
     console.log('\n> Shutting down...')
     wss.clients.forEach((client) => client.close())
     for (const observer of teamObservers.values()) clearInterval(observer.timer)
+    for (const autopilot of v2Autopilots.values()) clearInterval(autopilot.timer)
     teamObservers.clear()
+    v2Autopilots.clear()
     clientWatchers.forEach(({ close }) => close())
     globalCleanups.forEach((cleanup) => cleanup())
     server.close(() => process.exit(0))

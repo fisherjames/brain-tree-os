@@ -8,6 +8,7 @@ import TabBar, { type Tab } from './tab-bar';
 import FileViewer from './file-viewer';
 import RightPane from './right-pane';
 import TeamTracker from './team-tracker';
+import DirectorConsole from './director-console';
 import { ConnectionStatusIndicator } from './connection-status';
 import { ShareButton } from './share-button';
 import BrainLoader from './brain-loader';
@@ -45,6 +46,7 @@ interface BrainLayoutProps {
 
 const GRAPH_TAB: Tab = { id: 'graph', label: 'Graph View' };
 const TEAM_TAB: Tab = { id: 'team', label: 'Team Tracker' };
+const DIRECTOR_TAB: Tab = { id: 'director', label: 'Director Console' };
 
 export function BrainLayout({
   brainId, files: initialFiles, links: initialLinks,
@@ -73,8 +75,24 @@ export function BrainLayout({
     if (mobile) setSidebarOpen(false);
   }, []);
 
-  const [tabs, setTabs] = useState<Tab[]>([GRAPH_TAB, TEAM_TAB]);
+  const [v2Enabled, setV2Enabled] = useState(false);
+  useEffect(() => {
+    const envEnabled = process.env.NEXT_PUBLIC_BRIAN_V2 === '1';
+    const queryEnabled = new URLSearchParams(window.location.search).get('v2') === '1';
+    setV2Enabled(envEnabled || queryEnabled);
+  }, []);
+
   const [activeTabId, setActiveTabId] = useState('graph');
+  const [tabs, setTabs] = useState<Tab[]>([GRAPH_TAB, TEAM_TAB]);
+  useEffect(() => {
+    setTabs((prev) => {
+      const hasDirector = prev.some((tab) => tab.id === 'director');
+      if (v2Enabled && !hasDirector) return [prev[0] ?? GRAPH_TAB, prev[1] ?? TEAM_TAB, DIRECTOR_TAB, ...prev.slice(2)];
+      if (!v2Enabled && hasDirector) return prev.filter((tab) => tab.id !== 'director');
+      return prev;
+    });
+    if (!v2Enabled && activeTabId === 'director') setActiveTabId('team');
+  }, [v2Enabled, activeTabId]);
   const [fileContents, setFileContents] = useState<Map<string, string>>(new Map());
   const [loadingFile, setLoadingFile] = useState<string | null>(null);
 
@@ -134,14 +152,14 @@ export function BrainLayout({
   }
 
   function handleCloseTab(tabId: string) {
-    if (tabId === 'graph' || tabId === 'team') return;
+    if (tabId === 'graph' || tabId === 'team' || tabId === 'director') return;
     setTabs((prev) => prev.filter((t) => t.id !== tabId));
     if (activeTabId === tabId) setActiveTabId('graph');
   }
 
   function handleCloseOthers(tabId: string) {
-    setTabs((prev) => prev.filter((t) => t.id === 'graph' || t.id === 'team' || t.id === tabId));
-    if (activeTabId !== tabId && activeTabId !== 'graph' && activeTabId !== 'team') setActiveTabId(tabId);
+    setTabs((prev) => prev.filter((t) => t.id === 'graph' || t.id === 'team' || t.id === 'director' || t.id === tabId));
+    if (activeTabId !== tabId && activeTabId !== 'graph' && activeTabId !== 'team' && activeTabId !== 'director') setActiveTabId(tabId);
   }
 
   function handleCloseToRight(tabId: string) {
@@ -219,6 +237,8 @@ export function BrainLayout({
               handoffs={handoffs}
               refreshSnapshot={refreshSnapshot}
             />
+          ) : activeTabId === 'director' ? (
+            <DirectorConsole brainId={brainId} />
           ) : loadingFile === activeTabId ? (
             <BrainLoader />
           ) : activeFileContent ? (

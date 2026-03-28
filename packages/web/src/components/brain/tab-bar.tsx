@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useEffect, useMemo } from 'react';
-import { X, FileText, Network } from 'lucide-react';
+import { X, FileText, Network, Building2 } from 'lucide-react';
 import { useContextMenu } from '@/hooks/use-context-menu';
 import { ContextMenu, type ContextMenuItem } from '@/components/ui/context-menu';
 
@@ -44,18 +44,18 @@ export default function TabBar({
     const ctx = ctxMenu.state.context;
     if (!ctx) return [];
     const { tabId, tabIndex } = ctx;
-    const isGraph = tabId === 'graph';
+    const isPinned = tabId === 'graph' || tabId === 'team' || tabId === 'director';
 
-    // Count closable tabs to the right (excluding graph)
-    const tabsToRight = tabs.slice(tabIndex + 1).filter((t) => t.id !== 'graph');
-    // Count closable other tabs (excluding graph and this tab)
-    const otherTabs = tabs.filter((t) => t.id !== 'graph' && t.id !== tabId);
+    // Count closable tabs to the right (excluding pinned tabs)
+    const tabsToRight = tabs.slice(tabIndex + 1).filter((t) => t.id !== 'graph' && t.id !== 'team' && t.id !== 'director');
+    // Count closable other tabs (excluding pinned tabs and this tab)
+    const otherTabs = tabs.filter((t) => t.id !== 'graph' && t.id !== 'team' && t.id !== 'director' && t.id !== tabId);
 
     return [
       {
         id: 'close',
         label: 'Close',
-        disabled: isGraph,
+        disabled: isPinned,
         onAction: () => onCloseTab(tabId),
       },
       {
@@ -82,6 +82,8 @@ export default function TabBar({
       {tabs.map((tab, index) => {
         const isActive = tab.id === activeTabId;
         const isGraph = tab.id === 'graph';
+        const isDirector = tab.id === 'director';
+        const isPinned = tab.id === 'graph' || tab.id === 'team' || tab.id === 'director';
 
         return (
           <button
@@ -99,13 +101,15 @@ export default function TabBar({
           >
             {isGraph ? (
               <Network className="h-3.5 w-3.5 shrink-0" />
+            ) : isDirector ? (
+              <Building2 className="h-3.5 w-3.5 shrink-0" />
             ) : (
               <FileText className="h-3.5 w-3.5 shrink-0" />
             )}
             <span className="max-w-[120px] truncate whitespace-nowrap">
               {tab.label}
             </span>
-            {!isGraph && (
+            {!isPinned && (
               <span
                 onClick={(e) => {
                   e.stopPropagation();
