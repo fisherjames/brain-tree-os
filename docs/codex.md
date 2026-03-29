@@ -5,13 +5,20 @@ Brian is the repo memory layer. Codex is the execution engine.
 ## Brian Commands
 
 Canonical workflow:
-- `brian next`
+- `brian intent`
+- `brian propose`
+- `brian shape`
+- `brian plan`
 - `brian work`
-- `brian end`
+- `brian brief`
+- `brian decide`
 - `brian status`
-- `brian mission`
+- `brian doctrine-lint`
 
 Compatibility and maintenance:
+- `brian next`
+- `brian mission`
+- `brian end`
 - `brian init`
 - `brian resume`
 - `brian wrap-up`
@@ -51,15 +58,15 @@ brian end --role backend
 
 The managed skill pack supplies the reusable behavior. Brian notes supply the project memory.
 
-Mission Control observer loop (Team Tracker):
+Mission Control loop (Director Console V2):
 
-1. Open `/brains/<id>` and switch to `Team Tracker`.
-2. Click `Start Observer` to enable MCP-based queue auditing.
-3. Work through `Start Next Work`, verification, and merge queue actions.
-4. Observer auto-adds actionable `NEXT:`/`BLOCKER:` items when it detects dead-ends, conflicts, unresolved worktrees, or malformed merge metadata.
-5. Click `Stop Observer` when the mission is stable.
+1. Open `/brains/<id>?v2=1` and switch to `Director Console`.
+2. Capture intent or use `Seed 3-Pack` for automated incremental/dream/refactor backlog generation.
+3. Use stage controls (`Tick`) or explicit lifecycle actions from CLI.
+4. Resolve escalations and decisions directly (`Mark Resolved`, `Approve`, bulk actions).
+5. Use Playback Mode (`Run Slow/Normal/Fast`) to prove end-to-end transition behavior in UI.
 
-Queue contract:
+Compatibility loop (Team Tracker):
 - `NEXT:` items should be feature-length and include `feature=`, `worktree=`, `image=`, `breaking=`.
 - `MERGE:` items should use `worktree=<branch> -> main` and include `feature=`, `image=`, `breaking=`.
 - `Start Next Work` should remain blocked when hard blockers exist.

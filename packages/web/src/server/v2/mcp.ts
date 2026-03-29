@@ -1,7 +1,8 @@
+import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { getBrain } from '../../lib/local-data'
 import { readV2Models } from '../../lib/v2/projection'
-import { appendEvent, ensureV2Scaffold, nextId, writeRecordMarkdown } from '../../lib/v2/storage'
+import { appendEvent, ensureV2Scaffold, nextId, parseFrontmatter, writeRecordMarkdown } from '../../lib/v2/storage'
 import type { V2Event, V2Stage } from '../../lib/v2/types'
 
 export const V2_METHODS = new Set([
@@ -15,10 +16,12 @@ export const V2_METHODS = new Set([
   'discussion.escalate',
   'discussion.resolve',
   'decision.record',
+  'decision.resolve',
   'decision.list_pending',
   'briefing.generate',
   'briefing.publish',
   'workflow.tick',
+  'workflow.seed_backlog',
   'workflow.autopilot.state',
 ])
 
@@ -122,6 +125,27 @@ function createRecord(brainPath: string, kind: 'discussions' | 'decisions' | 'br
   return { id, rel }
 }
 
+function findRecordPath(brainPath: string, kind: 'discussions' | 'decisions' | 'briefings' | 'initiatives', id: string): string | null {
+  const candidate = path.join(brainPath, 'brian', kind, `${id}.md`)
+  return fs.existsSync(candidate) ? candidate : null
+}
+
+function updateFrontmatter(filePath: string, updates: Record<string, string>) {
+  const raw = fs.readFileSync(filePath, 'utf8')
+  if (!raw.startsWith('---\n')) throw new Error(`invalid_frontmatter:${path.basename(filePath)}`)
+
+  const lines = raw.split('\n')
+  const secondFence = lines.findIndex((line, idx) => idx > 0 && line.trim() === '---')
+  if (secondFence < 0) throw new Error(`invalid_frontmatter:${path.basename(filePath)}`)
+
+  const fmRaw = lines.slice(0, secondFence + 1).join('\n')
+  const body = lines.slice(secondFence + 1).join('\n').replace(/^\n+/, '')
+  const current = parseFrontmatter(fmRaw)
+  const merged = { ...current, ...updates }
+  const fmLines = ['---', ...Object.entries(merged).map(([k, v]) => `${k}: ${v}`), '---', ''].join('\n')
+  fs.writeFileSync(filePath, `${fmLines}${body.trimEnd()}\n`, 'utf8')
+}
+
 export function readV2ApiData(brainId: string) {
   const brain = requireBrain(brainId)
   return readV2Models(brainId, brain.path)
@@ -187,7 +211,33 @@ export function runV2McpCall(brainId: string, method: string, params: Record<str
   }
 
   if (method === 'discussion.answer' || method === 'discussion.escalate' || method === 'discussion.resolve') {
-    const event = lifecycleEvent(brainId, method, params)
+    const discussionId = typeof params.discussionId === 'string' ? params.discussionId.trim() : ''
+    if (!discussionId) throw new Error('missing_discussionId')
+    const discussionPath = findRecordPath(brain.path, 'discussions', discussionId)
+    if (!discussionPath) throw new Error(`discussion_not_found:${discussionId}`)
+
+    if (method === 'discussion.answer') {
+      const current = parseFrontmatter(fs.readFileSync(discussionPath, 'utf8'))
+      const unresolved = Math.max(0, Number(current.unresolved_questions ?? '1') - 1)
+      updateFrontmatter(discussionPath, {
+        unresolved_questions: String(unresolved),
+        status: unresolved === 0 ? 'resolved' : 'open',
+        updated_at: new Date().toISOString(),
+      })
+    } else if (method === 'discussion.escalate') {
+      updateFrontmatter(discussionPath, {
+        status: 'escalated',
+        updated_at: new Date().toISOString(),
+      })
+    } else {
+      updateFrontmatter(discussionPath, {
+        status: 'resolved',
+        unresolved_questions: '0',
+        updated_at: new Date().toISOString(),
+      })
+    }
+
+    const event = lifecycleEvent(brainId, method, { ...params, discussionId })
     return { message: method, event, ...readV2ApiData(brainId) }
   }
 
@@ -209,6 +259,26 @@ export function runV2McpCall(brainId: string, method: string, params: Record<str
       pending: models.companyState.pendingDecisions,
       ...models,
     }
+  }
+
+  if (method === 'decision.resolve') {
+    const decisionId = typeof params.decisionId === 'string' ? params.decisionId.trim() : ''
+    const status = typeof params.status === 'string' ? params.status.trim() : 'approved'
+    if (!decisionId) throw new Error('missing_decisionId')
+    if (status !== 'approved' && status !== 'rejected') throw new Error(`invalid_decision_status:${status}`)
+    const decisionPath = findRecordPath(brain.path, 'decisions', decisionId)
+    if (!decisionPath) throw new Error(`decision_not_found:${decisionId}`)
+
+    updateFrontmatter(decisionPath, {
+      status,
+      updated_at: new Date().toISOString(),
+    })
+    const event = lifecycleEvent(brainId, 'decision.record', {
+      ...params,
+      decisionId,
+      message: `decision_resolved:${status}`,
+    })
+    return { message: `decision_resolved:${decisionId}:${status}`, event, ...readV2ApiData(brainId) }
   }
 
   if (method === 'briefing.generate') {
@@ -259,6 +329,30 @@ export function runV2McpCall(brainId: string, method: string, params: Record<str
       message: `workflow.tick:${open.id}:${open.stage}->${nextStage}`,
       transition: { initiativeId: open.id, from: open.stage, to: nextStage },
       event,
+      ...readV2ApiData(brainId),
+    }
+  }
+
+  if (method === 'workflow.seed_backlog') {
+    const theme = typeof params.theme === 'string' && params.theme.trim() ? params.theme.trim() : 'mission control'
+    const seedSet = [
+      `Incremental: improve ${theme} clarity and reduce blocker ambiguity`,
+      `Dream feature: autonomous overnight product backlog refinement for ${theme}`,
+      `Refactor: normalize V2 state transitions and persistence contracts for ${theme}`,
+    ]
+    const created: string[] = []
+    for (const title of seedSet) {
+      const initiativeId = upsertInitiative(brain.path, { title, stage: 'intent', summary: title })
+      created.push(initiativeId)
+      lifecycleEvent(brainId, 'company.intent.capture', {
+        ...params,
+        initiativeId,
+        title,
+      })
+    }
+    return {
+      message: `workflow.seed_backlog:${created.length}`,
+      created,
       ...readV2ApiData(brainId),
     }
   }

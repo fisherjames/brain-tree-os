@@ -150,6 +150,10 @@ V2 Director Console is currently parallelized behind a feature flag:
 
 - set `NEXT_PUBLIC_BRIAN_V2=1` before starting the viewer
 - or open a brain with `?v2=1`
+- Director Console supports:
+  - Playback Mode (`Run Slow / Run Normal / Run Fast`) for staged lifecycle simulation
+  - Backlog seeding (`Seed 3-Pack`) for incremental + dream + refactor initiative generation
+  - In-console escalation and decision resolution (`Mark Resolved`, `Approve`, bulk actions)
 
 V1 remains runnable during migration.
 
