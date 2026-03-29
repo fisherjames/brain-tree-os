@@ -256,10 +256,11 @@ export default function TeamTracker({
   }, [events])
 
   const currentTask = useMemo(() => {
-    if (runState?.label) return runState.label
+    if (runActive && runState?.label) return runState.label
     if (openNextItems.length > 0) return openNextItems[0].text
+    if (!/^no suggestion available$/i.test(suggested) && !/^no pending suggestion$/i.test(suggested)) return suggested
     return ''
-  }, [openNextItems, runState?.label])
+  }, [openNextItems, runActive, runState?.label, suggested])
 
   async function apply(method: string, params: Record<string, unknown>, key: string) {
     setBusy(key)

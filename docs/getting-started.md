@@ -42,13 +42,26 @@ The wizard asks for:
 
 For a fully managed setup, choose `codex-team`.
 
-## 4. Start Work
+## 4. Start V2 Work
+
+```bash
+brian intent "Improve checkout conversion"
+brian propose "Checkout conversion initiative"
+brian shape initiative-xxxx
+brian plan initiative-xxxx
+brian work
+brian brief
+brian decide initiative-xxxx "Approve rollout"
+```
+
+This drives the canonical initiative lifecycle.
+
+Legacy compatibility still exists:
 
 ```bash
 brian next
+brian mission "Feature Name"
 ```
-
-Then run the recommended command (usually `brian work` or `brian plan <step>`).
 
 Or launch with a role directly:
 
@@ -66,7 +79,27 @@ This launches Codex with:
 - the latest handoff
 - the relevant role note
 
-## 5. Start A Spec-First Feature
+## 5. Use Director Console (V2)
+
+Open:
+
+- `http://localhost:3010/brains/<brainId>?v2=1`
+
+In Director Console:
+
+- use `Capture Intent` for one initiative
+- use `Seed 3-Pack` for incremental + dream + refactor backlog generation
+- use `Run Slow / Run Normal / Run Fast` Playback Mode to simulate lifecycle transitions
+- resolve escalations and decisions in-console (`Mark Resolved`, `Approve`, bulk actions)
+
+In Team Tracker:
+
+- `Start Next Work` marks the selected `NEXT:` item and auto-creates a paired `MERGE:` queue item with branch/image/breaking metadata.
+- `Dry Run Queue` validates merge metadata, verification status, and conflict risk before any merge.
+- every run completion writes a new handoff in `brian/handoffs/` and pushes it to the live Handoffs panel.
+- `Start Observer` auto-seeds a 3-pack backlog (`incremental`, `dream_feature`, `refactor`) when queue is empty.
+
+## 6. Start A Spec-First Feature (Compatibility)
 
 ```bash
 brian mission "Feature Name"
@@ -79,7 +112,7 @@ This creates:
 - a linked execution-plan step
 - a linked team-board step
 
-## 6. End Work
+## 7. End Work
 
 ```bash
 brian end
@@ -93,7 +126,7 @@ brian end --role backend
 
 This creates the next handoff and launches Codex with the managed wrap-up prompt.
 
-## 7. Migrate An Older Repo
+## 8. Migrate An Older Repo
 
 If a repo still has an older layout:
 
@@ -103,7 +136,7 @@ brian migrate
 
 After migration, Brian operates on `brian/` plus `.brian/`.
 
-## 8. Team And Parallel Work
+## 9. Team And Parallel Work
 
 For multi-role work:
 

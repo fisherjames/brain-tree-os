@@ -1,4 +1,5 @@
 import path from 'path'
+import fs from 'node:fs'
 import next from 'next'
 import { createServer } from 'http'
 import { WebSocketServer, WebSocket } from 'ws'
@@ -14,7 +15,13 @@ const port = parseInt(process.env.PORT || '3000', 10)
 
 // __dirname is packages/web/src/server, project root is two levels up
 const projectRoot = path.resolve(__dirname, '..', '..')
-const app = next({ dev, dir: projectRoot })
+const app = next({
+  dev,
+  dir: projectRoot,
+  conf: {
+    distDir: dev ? '.next-dev' : '.next',
+  },
+})
 const handle = app.getRequestHandler()
 
 // Track watchers per WebSocket connection
@@ -44,7 +51,7 @@ type TeamStep = {
 
 type TeamSnapshot = {
   executionSteps: TeamStep[]
-  handoffs: Array<{ id: string }>
+  handoffs: Array<{ id: string; session_number?: number; summary?: string; file_path?: string }>
 }
 
 type TeamObserver = {
@@ -66,6 +73,73 @@ const activeRuns = new Map<string, BrainRun>()
 const activeChildren = new Map<string, ChildProcess>()
 const teamObservers = new Map<string, TeamObserver>()
 const v2Autopilots = new Map<string, V2Autopilot>()
+
+function broadcastSnapshotToBrainSubscribers(brainId: string, snapshot: TeamSnapshot) {
+  for (const [client, watcher] of clientWatchers.entries()) {
+    if (watcher.brainId !== brainId || client.readyState !== WebSocket.OPEN) continue
+    client.send(JSON.stringify({ type: 'execution_steps', data: snapshot.executionSteps }))
+    client.send(JSON.stringify({ type: 'handoffs', data: snapshot.handoffs }))
+  }
+}
+
+function createAutoHandoff(brainId: string, run: BrainRun): string | null {
+  let brainPath = ''
+  try {
+    brainPath = getBrainPathForId(brainId)
+  } catch {
+    return null
+  }
+  const handoffDir = path.join(brainPath, 'brian', 'handoffs')
+  if (!fs.existsSync(handoffDir)) return null
+
+  const files = fs
+    .readdirSync(handoffDir)
+    .filter((name) => /^handoff-\d+\.md$/i.test(name))
+    .sort((a, b) => a.localeCompare(b))
+  const maxSession = files.reduce((acc, file) => {
+    const match = file.match(/^handoff-(\d+)\.md$/i)
+    if (!match) return acc
+    return Math.max(acc, Number(match[1]))
+  }, 0)
+  const session = maxSession + 1
+  const sessionId = String(session).padStart(3, '0')
+  const fileName = `handoff-${sessionId}.md`
+  const filePath = path.join(handoffDir, fileName)
+
+  const started = new Date(run.startedAt)
+  const ended = new Date(run.endedAt ?? new Date().toISOString())
+  const durationSec = Math.max(0, Math.round((ended.getTime() - started.getTime()) / 1000))
+  let recommendation = 'No pending suggestion'
+  try {
+    recommendation = getSuggestedTask(brainId)?.label ?? recommendation
+  } catch {
+    // best-effort handoff generation; keep fallback recommendation
+  }
+
+  const content = [
+    `# handoff-${sessionId}`,
+    '',
+    '> Part of [[handoffs]]',
+    '',
+    '## Session Snapshot',
+    `- Started: ${run.startedAt}`,
+    `- Ended: ${run.endedAt ?? ended.toISOString()}`,
+    `- Duration: ${durationSec}s`,
+    `- Actor: ${run.actor}`,
+    `- Status: ${run.status}`,
+    '',
+    '## Work Summary',
+    `- Task: ${run.label}`,
+    run.blockerReason ? `- Blocker: ${run.blockerReason}` : '',
+    '',
+    '## Recommended Next Steps',
+    `- ${recommendation}`,
+    '',
+  ].filter(Boolean).join('\n')
+
+  fs.writeFileSync(filePath, content, 'utf8')
+  return `brian/handoffs/${fileName}`
+}
 
 function inferActor(label: string): string {
   const lower = label.toLowerCase()
@@ -197,16 +271,23 @@ function collectObserverIssues(
   const hasOpenNext = hasTaskWithPrefix(snapshot, 'NEXT:')
   if (!hasOpenNext) {
     const trimmed = suggested.trim()
-    const source = trimmed.length > 0 && !isFallbackSuggestion(trimmed) ? trimmed : 'Define one concrete NEXT task for the active mission.'
-    const slug = source
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 42) || 'queue-bootstrap'
-    issues.push({
-      prefix: 'NEXT:',
-      text: `feature="${source}" worktree=feature/${slug} image=pending breaking=none`,
-    })
+    const source = trimmed.length > 0 && !isFallbackSuggestion(trimmed) ? trimmed : 'mission control reliability'
+    const lanes: Array<{ lane: string; title: string }> = [
+      { lane: 'incremental', title: `Incremental: ${source}` },
+      { lane: 'dream_feature', title: `Dream feature: autonomous ${source} assistant` },
+      { lane: 'refactor', title: `Refactor: simplify and harden ${source} workflow` },
+    ]
+    for (const lane of lanes) {
+      const slug = `${lane.lane}-${lane.title}`
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 42) || `queue-${lane.lane}`
+      issues.push({
+        prefix: 'NEXT:',
+        text: `feature="${lane.title}" lane=${lane.lane} worktree=feature/${slug} image=pending breaking=none`,
+      })
+    }
   }
 
   const mergeWithoutMetadata = snapshot.executionSteps.some((step) =>
@@ -378,6 +459,17 @@ function startCodexRunForSuggestion(wss: WebSocketServer, brainId: string) {
       stage: run.status === 'completed' ? 'verification' : 'blocker',
       kind: run.status === 'completed' ? 'status' : 'blocker',
     })
+    const handoffPath = createAutoHandoff(brainId, run)
+    if (handoffPath) {
+      broadcastTeamEvent(wss, brainId, `handoff_created:${handoffPath}`, {
+        actor: run.actor,
+        stage: 'verification',
+        kind: 'status',
+        refs: [handoffPath],
+      })
+    }
+    const postRun = runTeamMcpCall(brainId, 'team.get_snapshot', {})
+    broadcastSnapshotToBrainSubscribers(brainId, postRun.snapshot as TeamSnapshot)
   })
 
   broadcastTeamEvent(wss, brainId, `run_started:${label}`, { actor: run.actor, stage: 'planning', kind: 'status' })

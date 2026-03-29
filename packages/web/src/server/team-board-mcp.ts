@@ -424,7 +424,7 @@ function latestHandoffRecommendation(brainPath: string, snapshot: Snapshot): str
   try {
     const fullPath = path.join(brainPath, latest.file_path)
     const content = fs.readFileSync(fullPath, 'utf8')
-    const match = content.match(/##\s+Recommended Next Step\s*\n([\s\S]*?)(?:\n##\s+|\n#\s+|$)/i)
+    const match = content.match(/##\s+Recommended Next Steps?\s*\n([\s\S]*?)(?:\n##\s+|\n#\s+|$)/i)
     if (!match?.[1]) return null
     const section = match[1].trim()
     const line = section
@@ -492,6 +492,11 @@ function hasVerificationForStep(step: ExecutionStep | undefined): boolean {
 function findSuggested(snapshot: Snapshot, brainPath: string): TeamSuggestion | null {
   const sourceSteps = snapshot.executionSteps.filter((s) => s.phase_number === 99)
   const steps = sourceSteps.length > 0 ? sourceSteps : snapshot.executionSteps
+  const normalizeTaskText = (value: string) =>
+    value
+      .replace(/^(NEXT|MERGE|VERIFY|NOTE|BLOCKER):\s*/i, '')
+      .trim()
+      .toLowerCase()
   for (const step of steps) {
     const tasks = step.tasks_json ?? []
     for (let i = 0; i < tasks.length; i++) {
@@ -501,15 +506,27 @@ function findSuggested(snapshot: Snapshot, brainPath: string): TeamSuggestion | 
       }
     }
   }
+  const handoffRecommendation = latestHandoffRecommendation(brainPath, snapshot)
+  if (handoffRecommendation) {
+    const normalizedRecommendation = normalizeTaskText(handoffRecommendation)
+    const isStaleRecommendation = steps.some((step) =>
+      (step.tasks_json ?? []).some((task) => normalizeTaskText(task.text) === normalizedRecommendation)
+    )
+    if (isStaleRecommendation) {
+      const unstarted = steps.find((s) => s.status === 'not_started')
+      if (unstarted) return { stepId: unstarted.id, label: unstarted.title }
+      return null
+    }
+    const fallbackStepId =
+      steps.find((s) => s.status === 'in_progress')?.id ??
+      steps.find((s) => s.status === 'not_started')?.id ??
+      steps[0]?.id
+    if (!fallbackStepId) return null
+    return { stepId: fallbackStepId, label: handoffRecommendation }
+  }
   const unstarted = steps.find((s) => s.status === 'not_started')
   if (unstarted) return { stepId: unstarted.id, label: unstarted.title }
-  const handoffRecommendation = latestHandoffRecommendation(brainPath, snapshot)
-  if (!handoffRecommendation) return null
-  const fallbackStepId =
-    steps.find((s) => s.status === 'in_progress')?.id ??
-    steps[0]?.id
-  if (!fallbackStepId) return null
-  return { stepId: fallbackStepId, label: handoffRecommendation }
+  return null
 }
 
 export function getSuggestedTask(brainId: string): TeamSuggestion | null {
@@ -926,8 +943,35 @@ export function runTeamMcpCall(
     if (target?.status === 'not_started') {
       mutateStepFile(brainPath, { stepId: suggestion.stepId, status: 'in_progress' })
     }
+    const sourceTaskText =
+      typeof suggestion.taskIndex === 'number'
+        ? target?.tasks_json?.[suggestion.taskIndex]?.text ?? ''
+        : ''
     if (typeof suggestion.taskIndex === 'number') {
       mutateStepFile(brainPath, { stepId: suggestion.stepId, taskIndex: suggestion.taskIndex, taskDone: true })
+    }
+    const queueBranch = parseTaskMetadata(sourceTaskText, 'branch') ?? parseTaskMetadata(sourceTaskText, 'worktree')
+    if (queueBranch) {
+      const feature = parseTaskMetadata(sourceTaskText, 'feature') ?? suggestion.label
+      const image = parseTaskMetadata(sourceTaskText, 'image') ?? 'pending'
+      const breaking = parseTaskMetadata(sourceTaskText, 'breaking') ?? 'none'
+      const afterToggle = snapshotForBrain(brainPath)
+      const stepAfterToggle = afterToggle.executionSteps.find((s) => s.id === suggestion.stepId)
+      const hasMergeTask = (stepAfterToggle?.tasks_json ?? []).some(
+        (task) =>
+          !task.done &&
+          task.text.toUpperCase().startsWith('MERGE:') &&
+          (parseTaskMetadata(task.text, 'branch') ?? parseTaskMetadata(task.text, 'worktree')) === queueBranch
+      )
+      if (!hasMergeTask) {
+        mutateStepFile(
+          brainPath,
+          {
+            stepId: suggestion.stepId,
+            appendTaskText: `MERGE: feature="${feature}" branch=${queueBranch} -> main image=${image} breaking=${breaking}`,
+          }
+        )
+      }
     }
     mutateStepFile(brainPath, {
       stepId: suggestion.stepId,
