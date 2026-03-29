@@ -79,18 +79,19 @@ This launches Codex with:
 - the latest handoff
 - the relevant role note
 
-## 5. Use Director Console (V2)
+## 5. Use Company OS (V2 Default)
 
 Open:
 
-- `http://localhost:3010/brains/<brainId>?v2=1`
+- `http://localhost:3010/brains/<brainId>`
 
-In Director Console:
+In Company OS:
 
 - use `Capture Intent` for one initiative
 - use `Seed 3-Pack` for incremental + dream + refactor backlog generation
-- use `Run Slow / Run Normal / Run Fast` Playback Mode to simulate lifecycle transitions
-- resolve escalations and decisions in-console (`Mark Resolved`, `Approve`, bulk actions)
+- resolve escalations and decisions in the CEO inbox (`Resolve All Escalations`, `Approve All`)
+- use `Tick` and `Generate Briefing` to drive and summarize lifecycle progress
+- legacy graph/files workspace remains available at `?legacy=1`
 
 In Team Tracker:
 
