@@ -980,6 +980,76 @@ function appendSquadPlanningQueue(
   return { stepNumber, queued }
 }
 
+function planningQuestionSet(initiativeTitle: string): string[] {
+  return [
+    `What is the smallest shippable scope for "${initiativeTitle}" this cycle?`,
+    'What dependencies or interfaces could block implementation?',
+    'What quality bar and verification checks are required before merge?',
+    'Are there compliance/security constraints outside squad authority?',
+    'Are there strategic or pricing implications that may require executive approval?',
+  ]
+}
+
+function requiresCeoEscalation(initiativeTitle: string): boolean {
+  const keywords = ['pricing', 'budget', 'legal', 'regulatory', 'compliance', 'hiring', 'fundraising', 'acquisition', 'board']
+  const normalized = initiativeTitle.toLowerCase()
+  return keywords.some((keyword) => normalized.includes(keyword))
+}
+
+function writePlanningDiscussionRecord(
+  brainRoot: string,
+  payload: {
+    initiativeId: string
+    initiativeTitle: string
+    squad: SquadConfig
+    questions: string[]
+    ceoEscalated: boolean
+  }
+): string {
+  ensureV2Docs(brainRoot)
+  const id = `discussion-${payload.initiativeId}-planning`
+  const filePath = path.join(brainRoot, 'brian', 'discussions', `${id}.md`)
+  const teamLead = payload.squad.memberAgentIds.find((member) => member === 'project-operator') ?? payload.squad.memberAgentIds[0] ?? 'project-operator'
+  const productOwner = payload.squad.memberAgentIds.find((member) => member === 'product-lead') ?? 'product-lead'
+  const escalationResult = payload.ceoEscalated
+    ? 'Escalated to CEO. Planning is paused pending CEO decision.'
+    : 'Resolved at product/tribe/director levels. Planning auto-advances to execution.'
+  const body = [
+    '---',
+    `id: ${id}`,
+    `initiative_id: ${payload.initiativeId}`,
+    `squad_id: ${payload.squad.id}`,
+    `squad_name: ${payload.squad.name}`,
+    `phase: squad_planning`,
+    `status: ${payload.ceoEscalated ? 'paused_ceo_escalation' : 'resolved_execution_ready'}`,
+    `created_at: ${isoNow()}`,
+    '---',
+    '',
+    `# Planning Discussion · ${payload.initiativeTitle}`,
+    '',
+    `- Team Lead: ${teamLead}`,
+    `- Product Owner: ${productOwner}`,
+    '- Escalation chain: team lead -> product owner -> tribe -> directors -> CEO (only if unresolved)',
+    '',
+    '## Question Set',
+    ...payload.questions.map((question, idx) => `${idx + 1}. ${question}`),
+    '',
+    '## Product Owner Responses',
+    '- Answered directly where within product/squad authority.',
+    '- Forwarded unresolved scope-risk questions to tribe/director layers.',
+    '',
+    '## Escalation Outcome',
+    escalationResult,
+    '',
+  ].join('\n')
+  fs.writeFileSync(filePath, body, 'utf8')
+  updateFileIfExists(path.join(brainRoot, 'brian', 'discussions', 'index.md'), (content) => {
+    const link = `- [[${id}]]`
+    return content.includes(link) ? content : `${content.trimEnd()}\n${link}\n`
+  })
+  return filePath
+}
+
 function ensureV2Docs(brainRoot: string) {
   const dirs = [
     path.join(brainRoot, 'brian', 'org'),
@@ -2811,11 +2881,24 @@ async function main() {
         for (const item of initiatives.slice(0, 10)) console.log(`  - ${item.id}: ${item.title}`)
         return
       }
+      const squad = resolveSquad(brainRoot, squadName)
+      const ceoEscalated = requiresCeoEscalation(initiativeMatch.title)
+      const nextStage: V2Stage = ceoEscalated ? 'squad_planning' : 'execution'
+      const questions = planningQuestionSet(initiativeMatch.title)
       const notePath = writeInitiativeRecord(brainRoot, {
         id: initiativeMatch.id,
         title: initiativeMatch.title,
-        stage: 'squad_planning',
-        summary: `Planned execution scope for ${initiativeMatch.title}`,
+        stage: nextStage,
+        summary: ceoEscalated
+          ? `Planning paused for CEO escalation: ${initiativeMatch.title}`
+          : `Planning resolved below CEO and auto-advanced to execution: ${initiativeMatch.title}`,
+      })
+      const discussionPath = writePlanningDiscussionRecord(brainRoot, {
+        initiativeId: initiativeMatch.id,
+        initiativeTitle: initiativeMatch.title,
+        squad,
+        questions,
+        ceoEscalated,
       })
       appendV2Event(brainRoot, {
         actor: 'project-operator',
@@ -2825,7 +2908,6 @@ async function main() {
         message: `initiative planned: ${initiativeMatch.title}`,
         initiativeId: initiativeMatch.id,
       })
-      const squad = resolveSquad(brainRoot, squadName)
       const board = appendSquadPlanningQueue(brainRoot, initiativeMatch.title, initiativeMatch.id, squad)
       appendV2Event(brainRoot, {
         actor: 'project-operator',
@@ -2835,9 +2917,33 @@ async function main() {
         message: `squad discussion started: ${initiativeMatch.title} (${squad.name})`,
         initiativeId: initiativeMatch.id,
       })
+      if (ceoEscalated) {
+        appendV2Event(brainRoot, {
+          actor: 'product-lead',
+          layer: 'director',
+          stage: 'director_decision',
+          kind: 'escalation_raised',
+          message: `planning escalated to CEO: ${initiativeMatch.title}`,
+          initiativeId: initiativeMatch.id,
+        })
+      } else {
+        appendV2Event(brainRoot, {
+          actor: 'product-lead',
+          layer: 'squad',
+          stage: 'execution',
+          kind: 'task_started',
+          message: `planning resolved without CEO escalation; execution started: ${initiativeMatch.title}`,
+          initiativeId: initiativeMatch.id,
+        })
+      }
       console.log(`  Initiative planned: ${initiativeMatch.id}`)
       console.log(`  Squad: ${squad.name} (${squad.id})`)
       console.log(`  Note: ${notePath}`)
+      console.log(`  Discussion: ${discussionPath}`)
+      console.log('  Question set:')
+      for (const question of questions) console.log(`  - ${question}`)
+      console.log('  Chain: Team Lead -> Product Owner -> Tribe -> Directors -> CEO (only if unresolved)')
+      console.log(`  Planning outcome: ${ceoEscalated ? 'paused at CEO escalation' : 'auto-advanced to execution'}`)
       console.log(`  Team board step: ${board.stepNumber} (discussion queue)`)
       if (board.queued.length > 0) {
         console.log(`  Next queue seeded (${board.queued.length}):`)

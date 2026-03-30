@@ -8,6 +8,15 @@ Brian runs work through an explicit organizational ladder. Decisions are resolve
 ## Canonical Workflow
 `intent -> proposal -> leadership discussion -> director decision -> tribe shaping -> squad planning -> execution -> verification -> merge -> briefing`
 
+## Planning Contract (Explicit)
+- `brian plan <initiative-id> --squad "<name>"` starts a squad planning discussion and generates a question set.
+- Discussion chain is fixed:
+  - Team Lead asks Product Owner first.
+  - Product Owner answers within authority/context.
+  - Unresolved items escalate stepwise: tribe -> director -> CEO.
+- Planning is paused only when escalation reaches CEO.
+- If escalation does not reach CEO, planning auto-advances directly to execution.
+
 ## Decision Governance
 - Escalation chain is fixed: `squad -> tribe -> director -> ceo`
 - Escalation is stepwise; no jumps
@@ -20,6 +29,7 @@ Brian runs work through an explicit organizational ladder. Decisions are resolve
 - `CEO Mission`: escalated decisions, strategic blockers, briefings
 - `Directors`: director decision inbox
 - `Tribe`: tribe decision inbox
+- `Product Owner View`: squad-context decision inbox
 - `Mission Control`: squad execution, verification, merge gates
 - `Graph + Notes`: evidence graph and note navigation
 - `Agents + Workflow`: editable personas, workflow rules, and skills
@@ -34,7 +44,8 @@ Brian runs work through an explicit organizational ladder. Decisions are resolve
 - `brian intent <text>`
 - `brian propose <title>`
 - `brian shape <initiative-id>`
-- `brian plan <initiative-id>`
+- `brian plan <initiative-id> [--squad <name>]`
+- `brian mission <name> [--squad <name>]`
 - `brian work`
 - `brian verify`
 - `brian merge`

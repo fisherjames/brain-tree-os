@@ -7,6 +7,12 @@ Brian is a markdown-first company operating system.
 - no execution without a context packet
 - no unresolved discussion without an escalation record
 - every interaction must emit one of: answer | decision | task | risk | escalation
+- squad planning contract:
+  - planning starts with a required question set
+  - team lead asks product owner first
+  - product owner answers within delegated authority/context
+  - unresolved questions escalate stepwise: squad -> tribe -> director -> ceo
+  - planning pauses only at CEO escalation; otherwise it moves directly to execution
 
 ## Decision Delegation Contract
 - Decision authority escalates only in this order: squad -> tribe -> director -> ceo
