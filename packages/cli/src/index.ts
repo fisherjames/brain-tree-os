@@ -938,6 +938,46 @@ function appendSquadMissionTeamBoard(
   return { stepNumber, mergeOrder, worktrees }
 }
 
+function appendSquadPlanningQueue(
+  brainRoot: string,
+  initiativeTitle: string,
+  initiativeId: string,
+  squad: SquadConfig
+): { stepNumber: string; queued: string[] } {
+  const teamBoardPath = path.join(commandsDirPath(brainRoot), 'team-board.md')
+  writeFileIfMissing(
+    teamBoardPath,
+    '# team board\n\n> Part of [[index]]\n\n## Phase 99 - Team Board\n'
+  )
+  const content = fs.readFileSync(teamBoardPath, 'utf8')
+  const escapedInitiative = initiativeTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const escapedSquad = squad.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const existing = content.match(new RegExp(`###\\s+Step\\s+(99\\.\\d+)\\s*:\\s*Plan\\s+${escapedInitiative}\\s+\\(${escapedSquad}\\)`, 'i'))
+  if (existing) return { stepNumber: existing[1], queued: [] }
+
+  const nums = [...content.matchAll(/###\s+Step\s+99\.(\d+)\s*:/gi)].map(match => Number(match[1]))
+  const next = (nums.length > 0 ? Math.max(...nums) + 1 : 1)
+  const stepNumber = `99.${next}`
+  const members = squad.memberAgentIds.length > 0 ? squad.memberAgentIds : ['project-operator']
+  const queued = members.map((member) => `squad-discussion:${initiativeId}:${member}`)
+  const nextTasks = members.map((member) =>
+    `- [ ] NEXT: feature="Plan ${initiativeTitle} (${member})" owner=${member} initiative=${initiativeId} image=pending breaking=none`
+  )
+  const section = [
+    '',
+    `### Step ${stepNumber}: Plan ${initiativeTitle} (${squad.name})`,
+    '- **Status**: in_progress',
+    `- **Squad**: ${squad.name} (${squad.id})`,
+    `- **Initiative**: ${initiativeId}`,
+    '- **Mode**: squad discussion and queue shaping (no worktrees yet)',
+    ...nextTasks,
+    '- [ ] BLOCKER: Capture unresolved questions that require escalation.',
+    '',
+  ].join('\n')
+  fs.writeFileSync(teamBoardPath, `${content.trimEnd()}\n${section}`)
+  return { stepNumber, queued }
+}
+
 function ensureV2Docs(brainRoot: string) {
   const dirs = [
     path.join(brainRoot, 'brian', 'org'),
@@ -2784,17 +2824,24 @@ async function main() {
         initiativeId: initiativeMatch.id,
       })
       const squad = resolveSquad(brainRoot, squadName)
-      const board = appendSquadMissionTeamBoard(brainRoot, initiativeMatch.title, initiativeMatch.id, squad)
+      const board = appendSquadPlanningQueue(brainRoot, initiativeMatch.title, initiativeMatch.id, squad)
+      appendV2Event(brainRoot, {
+        actor: 'project-operator',
+        layer: 'squad',
+        stage: 'squad_planning',
+        kind: 'discussion_opened',
+        message: `squad discussion started: ${initiativeMatch.title} (${squad.name})`,
+        initiativeId: initiativeMatch.id,
+      })
       console.log(`  Initiative planned: ${initiativeMatch.id}`)
       console.log(`  Squad: ${squad.name} (${squad.id})`)
       console.log(`  Note: ${notePath}`)
-      console.log(`  Team board step: ${board.stepNumber}`)
-      if (board.worktrees.length > 0) {
-        console.log(`  Worktrees queued (${board.worktrees.length}):`)
-        for (const wt of board.worktrees) console.log(`  - ${wt}`)
-        console.log(`  Merge order: ${board.mergeOrder.join(' -> ')}`)
+      console.log(`  Team board step: ${board.stepNumber} (discussion queue)`)
+      if (board.queued.length > 0) {
+        console.log(`  Next queue seeded (${board.queued.length}):`)
+        for (const item of board.queued) console.log(`  - ${item}`)
       } else {
-        console.log('  Team board step already existed; no new worktrees added.')
+        console.log('  Team board planning step already existed; no new queue items added.')
       }
       return
     }
