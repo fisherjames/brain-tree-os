@@ -7,7 +7,8 @@
     "build": "rm -rf .next && next build && tsc --project tsconfig.server.json",
     "start": "NODE_ENV=production node dist/server/custom-server.js",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "chokidar": "^4.0.0",
@@ -26,6 +27,7 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/d3": "^7.4.3",
     "@types/node": "^22.0.0",
