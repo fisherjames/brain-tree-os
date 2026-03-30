@@ -1,4 +1,4 @@
-# v2 runtime
+# runtime
 
 > Part of [[engineering/index]]
 

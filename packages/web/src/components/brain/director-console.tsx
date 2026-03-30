@@ -3,32 +3,40 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useMcpTeam } from '@/hooks/use-mcp-team'
 
-type Discussion = {
+type Decision = {
   id: string
   title: string
-  layer: 'squad' | 'tribe' | 'director'
-  status: 'open' | 'resolved' | 'escalated'
-  unresolvedQuestions: number
+  status: 'pending' | 'approved' | 'rejected'
   question: string
-  thread: string[]
+  rationale: string
   initiativeId?: string
-  escalationState: 'none' | 'pending' | 'resolved'
+  requiredContextLevel: 'squad' | 'tribe' | 'director' | 'ceo'
+  authorityScope: Array<'squad' | 'tribe' | 'director' | 'ceo'>
+  decisionPolicy: 'auto_infer' | 'delegated_approval' | 'ceo_required'
+  inferable: boolean
+  confidence: number
+  escalationReason: string
+  escalationPath: Array<'squad' | 'tribe' | 'director' | 'ceo'>
   filePath: string
 }
 
-export default function DirectorConsole({ brainId }: { brainId: string }) {
+export default function DirectorConsole({
+  brainId,
+  onOpenRecord,
+}: {
+  brainId: string
+  onOpenRecord?: (path: string) => void
+}) {
   const { call, connected } = useMcpTeam(brainId)
-  const [discussions, setDiscussions] = useState<Discussion[]>([])
-  const [responses, setResponses] = useState<Record<string, string>>({})
+  const [decisions, setDecisions] = useState<Decision[]>([])
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState('')
 
   const refresh = useCallback(async () => {
-    const discussionsRes = await fetch(`/api/v2/brains/${brainId}/discussions`, { cache: 'no-store' })
-    if (discussionsRes.ok) {
-      const json = (await discussionsRes.json()) as { discussions?: Discussion[] }
-      setDiscussions(Array.isArray(json.discussions) ? json.discussions : [])
-    }
+    const res = await fetch(`/api/brains/${brainId}/decisions`, { cache: 'no-store' })
+    if (!res.ok) return
+    const json = (await res.json()) as { decisions?: Decision[] }
+    setDecisions(Array.isArray(json.decisions) ? json.decisions : [])
   }, [brainId])
 
   useEffect(() => {
@@ -39,24 +47,54 @@ export default function DirectorConsole({ brainId }: { brainId: string }) {
     return () => clearInterval(id)
   }, [refresh])
 
-  const run = useCallback(async (method: string, params: Record<string, unknown>, key: string) => {
-    setBusy(key)
+  const inbox = useMemo(
+    () => decisions.filter((item) => item.status === 'pending' && item.requiredContextLevel === 'director'),
+    [decisions]
+  )
+
+  const resolve = useCallback(async (decisionId: string, status: 'approved' | 'rejected') => {
+    setBusy(`${status}-${decisionId}`)
     setError('')
     try {
-      const res = await call(method, params)
-      if (!res.ok) throw new Error(res.error || `action_failed:${method}`)
+      const res = await call('decision.resolve', { decisionId, status, actor: 'director' })
+      if (!res.ok) throw new Error(res.error || `decision_${status}_failed`)
       await refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : `action_failed:${method}`)
+      setError(err instanceof Error ? err.message : `decision_${status}_failed`)
     } finally {
       setBusy(null)
     }
   }, [call, refresh])
 
-  const directorEscalations = useMemo(
-    () => discussions.filter((item) => item.layer === 'director' && (item.status !== 'resolved' || item.escalationState === 'pending' || item.unresolvedQuestions > 0)),
-    [discussions]
-  )
+  const escalate = useCallback(async (decision: Decision) => {
+    setBusy(`escalate-${decision.id}`)
+    setError('')
+    try {
+      const escalationPath = Array.from(new Set([...decision.escalationPath, 'director', 'ceo']))
+      const record = await call('decision.record', {
+        initiativeId: decision.initiativeId,
+        title: `${decision.title} · CEO escalation`,
+        question: decision.question,
+        rationale: decision.rationale || decision.escalationReason || 'Director escalation required.',
+        requiredContextLevel: 'ceo',
+        authorityScope: ['ceo'],
+        decisionPolicy: 'ceo_required',
+        inferable: false,
+        confidence: Math.min(0.49, decision.confidence || 0.49),
+        escalationReason: 'Director could not infer safely within delegated authority.',
+        escalationPath,
+        actor: 'director',
+      })
+      if (!record.ok) throw new Error(record.error || 'decision_escalation_record_failed')
+      const close = await call('decision.resolve', { decisionId: decision.id, status: 'rejected', actor: 'director' })
+      if (!close.ok) throw new Error(close.error || 'decision_escalation_close_failed')
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'decision_escalation_failed')
+    } finally {
+      setBusy(null)
+    }
+  }, [call, refresh])
 
   return (
     <div className="h-full overflow-y-auto bg-[#F7F6F1] p-4 text-[13px] text-text">
@@ -64,7 +102,7 @@ export default function DirectorConsole({ brainId }: { brainId: string }) {
         <div className="flex items-center justify-between">
           <div>
             <div className="text-[11px] uppercase tracking-wide text-text-muted">Directors</div>
-            <div className="text-[12px] text-text-secondary">Handle director-level decisions and escalations from tribe reporters.</div>
+            <div className="text-[12px] text-text-secondary">Director-level decision inbox. Escalate only if not inferable under delegated authority.</div>
           </div>
           <div className={`rounded px-2 py-1 text-[11px] ${connected ? 'bg-[#5B9A65]/10 text-[#5B9A65]' : 'bg-[#D95B5B]/10 text-[#D95B5B]'}`}>
             {connected ? 'MCP connected' : 'MCP offline'}
@@ -72,52 +110,42 @@ export default function DirectorConsole({ brainId }: { brainId: string }) {
         </div>
       </div>
 
-      <div className="mb-4 rounded border border-border bg-white p-3">
-        <div className="mb-2 text-[11px] uppercase tracking-wide text-text-muted">Decisions From Tribe Escalations</div>
-        {directorEscalations.length === 0 ? (
+      <div className="rounded border border-border bg-white p-3">
+        <div className="mb-2 text-[11px] uppercase tracking-wide text-text-muted">Pending Director Decisions</div>
+        {inbox.length === 0 ? (
           <div className="text-[12px] text-text-muted">No pending director decisions.</div>
         ) : (
-          directorEscalations.map((item) => (
-            <div key={item.id} className="mb-2 rounded border border-[#D95B5B]/25 bg-[#D95B5B]/5 p-2 text-[12px] last:mb-0">
+          inbox.map((item) => (
+            <div key={item.id} className="mb-2 rounded border border-border/70 bg-[#FCFCFA] p-2 text-[12px] last:mb-0">
               <div className="font-medium">{item.title}</div>
-              <div className="mt-1 text-[11px] uppercase tracking-wide text-text-muted">Question</div>
-              <div className="text-text-secondary">{item.question || 'No explicit question recorded.'}</div>
+              <div className="mt-1 text-text-secondary">{item.question}</div>
+              <div className="mt-1 text-[11px] text-text-muted">Path: {item.escalationPath.join(' -> ') || 'director'}</div>
+              <div className="text-[11px] text-text-muted">Policy: {item.decisionPolicy} · confidence {Math.round((item.confidence || 0) * 100)}%</div>
+              {item.escalationReason && <div className="mt-1 text-[11px] text-text-muted">Escalation reason: {item.escalationReason}</div>}
+              <button
+                onClick={() => onOpenRecord?.(item.filePath)}
+                className="mt-1 rounded border border-border px-2 py-0.5 text-[11px] text-text-muted hover:bg-text/5"
+              >
+                Open decision
+              </button>
               <div className="mt-2 flex flex-wrap gap-2">
-                <input
-                  value={responses[item.id] ?? ''}
-                  onChange={(e) => setResponses((prev) => ({ ...prev, [item.id]: e.target.value }))}
-                  placeholder="Respond in thread"
-                  className="min-w-[180px] flex-1 rounded border border-border px-2 py-1 text-[11px]"
-                />
                 <button
-                  disabled={busy === `respond-${item.id}` || !(responses[item.id] ?? '').trim()}
-                  onClick={async () => {
-                    const message = (responses[item.id] ?? '').trim()
-                    if (!message) return
-                    await run('discussion.respond', { discussionId: item.id, actor: 'director', message }, `respond-${item.id}`)
-                    setResponses((prev) => ({ ...prev, [item.id]: '' }))
-                  }}
-                  className="rounded border border-border px-2 py-1 text-[11px] disabled:opacity-50"
-                >
-                  Respond
-                </button>
-                <button
-                  disabled={busy === `approve-${item.id}` || !item.question.trim()}
-                  onClick={() => void run('discussion.resolve', { discussionId: item.id, actor: 'director', resolution: 'confirmed' }, `approve-${item.id}`)}
+                  disabled={busy === `approved-${item.id}`}
+                  onClick={() => void resolve(item.id, 'approved')}
                   className="rounded border border-[#5B9A65]/40 bg-[#5B9A65]/5 px-2 py-1 text-[11px] text-[#5B9A65] disabled:opacity-50"
                 >
                   Approve
                 </button>
                 <button
-                  disabled={busy === `deny-${item.id}` || !item.question.trim()}
-                  onClick={() => void run('discussion.resolve', { discussionId: item.id, actor: 'director', resolution: 'denied' }, `deny-${item.id}`)}
+                  disabled={busy === `rejected-${item.id}`}
+                  onClick={() => void resolve(item.id, 'rejected')}
                   className="rounded border border-[#D95B5B]/40 bg-[#D95B5B]/5 px-2 py-1 text-[11px] text-[#D95B5B] disabled:opacity-50"
                 >
                   Deny
                 </button>
                 <button
-                  disabled={busy === `escalate-${item.id}` || !item.question.trim()}
-                  onClick={() => void run('discussion.escalate', { discussionId: item.id, actor: 'director', message: item.question }, `escalate-${item.id}`)}
+                  disabled={busy === `escalate-${item.id}`}
+                  onClick={() => void escalate(item)}
                   className="rounded border border-border px-2 py-1 text-[11px] disabled:opacity-50"
                 >
                   Escalate to CEO

@@ -23,7 +23,7 @@
 - `npm run -s typecheck --workspace=packages/web` passed.
 - `npm run -s build --workspace=packages/web` passed.
 - Websocket MCP autopilot calls verified with updated response envelope (`mode`, `lastResult`, timestamps).
-- `/api/v2/brains/:id/readiness` returns updated gate model.
+- `/api/brains/:id/company-state` returns updated gate model.
 
 ## Follow-ups
 - Keep reducing initiative noise in record explorer by collapsing older runs by default.

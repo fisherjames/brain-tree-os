@@ -12,7 +12,13 @@ export interface LocalBrain {
   name: string
   description: string
   path: string
-  createdAt: string
+  createdAt?: string
+  created?: string
+  mode?: string
+  projectRoot?: string
+  sharedPath?: string
+  localPath?: string
+  statePath?: string
 }
 
 export interface BrainFile {
@@ -103,12 +109,27 @@ export function registerBrain(brainPath: string): LocalBrain {
 // ── Brain listing ────────────────────────────────────
 
 export function listBrains(): LocalBrain[] {
-  return readBrainsConfig().brains
+  const config = readBrainsConfig()
+  const valid = config.brains.filter(isValidRegisteredBrain)
+  // Self-heal stale registrations so UI state remains consistent across refreshes.
+  if (valid.length !== config.brains.length) {
+    writeBrainsConfig({ brains: valid })
+  }
+  return valid
 }
 
 export function getBrain(brainId: string): LocalBrain | null {
-  const config = readBrainsConfig()
-  return config.brains.find((b) => b.id === brainId) ?? null
+  return listBrains().find((b) => b.id === brainId) ?? null
+}
+
+function isValidRegisteredBrain(brain: LocalBrain): boolean {
+  if (!brain?.id || !brain?.path || !brain?.name) return false
+  // Canonical registrations include explicit storage/runtime metadata.
+  if (!brain.mode || !brain.projectRoot || !brain.sharedPath || !brain.localPath || !brain.statePath) return false
+  if (!fs.existsSync(brain.path)) return false
+  if (!fs.existsSync(path.join(brain.path, 'brian'))) return false
+  if (!fs.existsSync(path.join(brain.path, '.brian', 'brain.json'))) return false
+  return true
 }
 
 // ── File scanning ────────────────────────────────────

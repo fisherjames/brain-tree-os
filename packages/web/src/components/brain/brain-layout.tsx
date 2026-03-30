@@ -301,7 +301,7 @@ export function BrainLayout({
           ) : activeTabId === 'tribe-direction' ? (
             <TribeDirection brainId={brainId} onOpenRecord={handleOpenRecord} />
           ) : activeTabId === 'directors' ? (
-            <DirectorConsole brainId={brainId} />
+            <DirectorConsole brainId={brainId} onOpenRecord={handleOpenRecord} />
           ) : activeTabId === 'mission' ? (
             <CeoOverview brainId={brainId} onOpenRecord={handleOpenRecord} />
           ) : activeTabId === 'agents-workflow' ? (

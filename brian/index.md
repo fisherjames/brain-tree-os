@@ -1,27 +1,26 @@
 # brian
 
-> Brian V2 memory: a company that thinks in markdown.
+> Brian memory: a company that thinks in markdown.
 
 ## North Star
-Brian is a markdown-first AI operating system where strategy, discussion, decision, and delivery are all visible and auditable.
+Brian is a delegated company OS for software delivery. Decisions are made at the lowest authorized level with escalating context. CEO intervenes only by exception.
 
 ## Workflow Contract
 `intent -> proposal -> leadership discussion -> director decision -> tribe shaping -> squad planning -> execution -> verification -> merge -> briefing`
 
-## Product UX Flow (V2)
-- `CEO Mission`: executive visibility for initiatives, decisions, briefings, blockers.
-- `Directors`: resolve pending decisions and escalations with explicit question context.
-- `Tribe`: resolve and escalate squad/tribe/director questions in one lane.
-- `Mission Control`: run queued work, verify outcomes, then merge safely.
-- `Mission Control`: generate explicit handoff checkpoints via UI when needed.
-- `Graph + Notes`: inspect linked markdown context when deeper reasoning is needed.
-- `Agents + Workflow`: edit persona notes, real Codex skills, and Brian rules.
+## Decision Ladder
+- squad -> tribe -> director -> ceo
+- each escalation adds context and creates a decision at the next level
+- CEO inbox contains only fully escalated or explicitly CEO-required decisions
+- inferable decisions are auto-resolved with evidence
 
-## Governance Rules
-- No execution without a context packet.
-- No unresolved discussion without an escalation record.
-- Every interaction must emit one of: `answer | decision | task | risk | escalation`.
-- Merge requires human verification evidence.
+## Product Surfaces
+- `CEO Mission`: escalated decisions, strategic blockers, briefings
+- `Directors`: director decision inbox
+- `Tribe`: tribe decision inbox
+- `Mission Control`: squad execution, verification, merge gate
+- `Graph + Notes`: evidence graph + source notes
+- `Agents + Workflow`: edit personas, rules, and skills
 
 ## Operating Areas
 - [[product/index]]
@@ -30,6 +29,7 @@ Brian is a markdown-first AI operating system where strategy, discussion, decisi
 - [[commands/index]]
 - [[agents/agents]]
 - [[org/index]]
+- [[constitution]]
 - [[execution-plan]]
 
 ## Runtime Records

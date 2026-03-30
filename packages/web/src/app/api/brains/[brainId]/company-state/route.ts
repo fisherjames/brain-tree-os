@@ -6,6 +6,5 @@ export async function GET(_req: Request, { params }: { params: Promise<{ brainId
   const { brainId } = await params
   const brain = getBrain(brainId)
   if (!brain) return NextResponse.json({ error: 'brain_not_found' }, { status: 404 })
-  const data = readV2ApiData(brainId)
-  return NextResponse.json(data.companyState)
+  return NextResponse.json(readV2ApiData(brainId).companyState)
 }

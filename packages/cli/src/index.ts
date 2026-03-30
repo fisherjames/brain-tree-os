@@ -14,16 +14,7 @@ const SERVER_JSON = path.join(CONFIG_DIR, 'server.json')
 const CODEX_SKILLS_DIR = path.join(os.homedir(), '.codex', 'skills')
 
 const VERSION = '0.2.0'
-const LEGACY_ALIAS_MAP: Record<string, string> = {
-  next: 'brian status',
-  mission: 'brian propose "<title>"',
-  spec: 'brian propose "<title>"',
-  feature: 'brian propose "<title>"',
-  sprint: 'brian plan <initiative-id>',
-  sync: 'brian doctrine-lint',
-  notes: 'brian brief',
-  'wrap-up': 'brian end',
-}
+const LEGACY_ALIAS_MAP: Record<string, string> = {}
 
 type BrainEntry = {
   id: string
@@ -174,8 +165,6 @@ function appendLegacyTelemetry(brainRoot: string, legacyCommand: string, canonic
 function warnLegacyAlias(brainRoot: string | undefined, legacyCommand: string) {
   const mapped = LEGACY_ALIAS_MAP[legacyCommand]
   if (!mapped) return
-  console.log(`  Compatibility alias used: brian ${legacyCommand}`)
-  console.log(`  Canonical command: ${mapped}`)
   if (brainRoot) appendLegacyTelemetry(brainRoot, `brian ${legacyCommand}`, mapped)
 }
 
@@ -967,7 +956,6 @@ function commandPromptSummary(brainRoot: string) {
   console.log('  - brian status')
   console.log('  - brian init')
   console.log('  - brian resume')
-  console.log('  - compatibility aliases remain available with migration warnings')
   console.log('')
 }
 
@@ -1302,7 +1290,7 @@ ${hasCommands ? '- [[commands]] - repeatable Codex start, planning, note-sync, a
 ${hasCommands ? '- Open [[commands]] and the relevant role note in [[agents]] when using the richer Codex workflow layer.\n' : ''}- Prefer small, verifiable edits over speculative rewrites.
 
 ## Workflow Contract
-- intent -> proposal -> leadership discussion -> director decision -> tribe shaping -> squad planning -> execution
+- intent -> proposal -> leadership discussion -> director decision -> tribe shaping -> squad planning -> execution -> verification -> merge -> briefing
 - no execution without a context packet
 - no unresolved discussion without an escalation record
 - every interaction must emit one of: answer | decision | task | risk | escalation
@@ -1954,7 +1942,7 @@ function runDoctrineLint(brainRoot: string): { ok: boolean; issues: string[] } {
   const discussionsDir = path.join(brainRoot, 'brian', 'discussions')
   const decisionsDir = path.join(brainRoot, 'brian', 'decisions')
 
-  const pipelineContract = 'intent -> proposal -> leadership discussion -> director decision -> tribe shaping -> squad planning -> execution'
+  const pipelineContract = 'intent -> proposal -> leadership discussion -> director decision -> tribe shaping -> squad planning -> execution -> verification -> merge -> briefing'
   const agentsContent = fs.existsSync(agentsPath) ? fs.readFileSync(agentsPath, 'utf8') : ''
   const constitutionContent = fs.existsSync(constitutionPath) ? fs.readFileSync(constitutionPath, 'utf8') : ''
 
@@ -2078,23 +2066,20 @@ function showHelp() {
     brian                           Start the viewer
     brian init                      Create a Brian scaffold in the current project
     brian status                    Show the current brain or all registered brains
-    brian intent <text>             Capture initiative intent (V2)
-    brian propose <name>            Create proposal-stage initiative (V2)
-    brian shape <initiative-id>     Move initiative to tribe shaping stage (V2)
-    brian plan <initiative-id>      Move initiative to squad planning stage (V2)
+    brian intent <text>             Capture initiative intent
+    brian propose <name>            Create proposal-stage initiative
+    brian shape <initiative-id>     Move initiative to tribe shaping stage
+    brian plan <initiative-id>      Move initiative to squad planning stage
     brian work                      Launch Codex with managed Brian start context
+    brian verify                    Record verification gate for active initiative
+    brian merge                     Record merge completion for active initiative
     brian end                       Create handoff + launch managed wrap-up context
-    brian brief                     Generate director briefing note (V2)
-    brian decide <id> <title>       Record director decision (V2)
-    brian doctrine-lint             Validate workflow doctrine + governance hygiene (V2)
+    brian brief                     Generate director briefing note
+    brian decide <id> <title>       Record director decision
+    brian doctrine-lint             Validate workflow doctrine + governance hygiene
     brian resume                    Show the files to read before working
-    brian migrate                   Migrate legacy layout into brian/.brian
     brian codex                     Show the Codex slash-command mapping for Brian
     brian help                      Show this help
-
-  Compatibility aliases (migration-only):
-    next | mission | spec | feature | sprint | sync | notes | wrap-up
-    (aliases remain supported but emit migration warnings)
 
   Viewer options:
     --port <number>                 Custom port (default: 3000)
@@ -2187,6 +2172,7 @@ async function main() {
   const allArgs = process.argv.slice(2)
   const command = allArgs[0] && !allArgs[0].startsWith('-') ? allArgs[0] : 'start'
   const args = commandArgs(allArgs, command)
+  const retiredCommands = new Set(['next', 'mission', 'spec', 'feature', 'sprint', 'sync', 'notes', 'wrap-up', 'migrate'])
 
   if (command === 'help' || hasFlag(args, '--help') || hasFlag(args, '-h')) {
     showHelp()
@@ -2195,6 +2181,13 @@ async function main() {
 
   if (command === 'start') {
     await startViewer(args)
+    return
+  }
+
+  if (retiredCommands.has(command)) {
+    console.log(`  Command retired: brian ${command}`)
+    console.log('  Canonical workflow: intent -> propose -> shape -> plan -> work -> verify -> merge -> brief')
+    process.exitCode = 1
     return
   }
 
@@ -2391,15 +2384,9 @@ async function main() {
 
   if (command === 'init') {
     const existingBrain = findBrainRoot(process.cwd())
-    const legacyBrain = !existingBrain ? findBrainRoot(process.cwd(), true) : null
     if (existingBrain) {
       console.log(`  Brian workspace already exists at ${existingBrain}`)
       console.log('  Run `brian resume` to continue working with it.')
-      return
-    }
-    if (legacyBrain) {
-      console.log(`  Legacy brain layout detected at ${legacyBrain}`)
-      console.log('  Run `brian migrate` before creating new Brian scaffolding.')
       return
     }
 
@@ -2433,7 +2420,7 @@ async function main() {
     if (initOptions.linkExistingDocs) {
       console.log('  Existing docs: linked into brian/operations/existing-docs.md where possible')
     }
-    console.log('  Next: run `brian intent "<initiative>"` then `brian propose "<title>"` to start the V2 lifecycle.')
+    console.log('  Next: run `brian intent "<initiative>"` then `brian propose "<title>"` to start the lifecycle.')
     return
   }
 
@@ -2476,6 +2463,56 @@ async function main() {
     printResume(brainRoot)
     const exitCode = await runInherited('codex', [buildWorkPrompt(brainRoot, roleName)], brainRoot)
     if (exitCode !== 0) process.exit(exitCode)
+    return
+  }
+
+  if (command === 'verify') {
+    const brainRoot = findBrainRoot(process.cwd())
+    if (!brainRoot) {
+      console.log('  No brain found in this directory tree.')
+      console.log('  Run `brian init` first.')
+      return
+    }
+    const initiatives = listV2Initiatives(brainRoot)
+    const active = initiatives.find((item) => item.stage === 'execution') ?? initiatives[0]
+    if (!active) {
+      console.log('  No active initiative to verify.')
+      return
+    }
+    appendV2Event(brainRoot, {
+      actor: 'project-operator',
+      layer: 'squad',
+      stage: 'execution',
+      kind: 'verification_recorded',
+      message: `verification recorded for ${active.title}`,
+      initiativeId: active.id,
+    })
+    console.log(`  Verification recorded for ${active.id}`)
+    return
+  }
+
+  if (command === 'merge') {
+    const brainRoot = findBrainRoot(process.cwd())
+    if (!brainRoot) {
+      console.log('  No brain found in this directory tree.')
+      console.log('  Run `brian init` first.')
+      return
+    }
+    const initiatives = listV2Initiatives(brainRoot)
+    const active = initiatives.find((item) => item.stage === 'execution') ?? initiatives[0]
+    if (!active) {
+      console.log('  No active initiative to merge.')
+      return
+    }
+    appendV2Event(brainRoot, {
+      actor: 'project-operator',
+      layer: 'squad',
+      stage: 'execution',
+      kind: 'merge_completed',
+      message: `merge recorded for ${active.title}`,
+      initiativeId: active.id,
+    })
+    console.log(`  Merge recorded for ${active.id}`)
     return
   }
 
@@ -2601,8 +2638,8 @@ async function main() {
 
     if (looksLegacyStep && stepArg) {
       appendLegacyTelemetry(brainRoot, `brian plan ${stepArg}`, 'brian plan <initiative-id>')
-      console.log(`  Compatibility mode: legacy execution-plan step "${stepArg}"`)
-      console.log('  Canonical command: brian plan <initiative-id>')
+      console.log(`  Interpreting legacy execution-plan step "${stepArg}"`)
+      console.log('  Recommended command: brian plan <initiative-id>')
     }
 
     const executionPlan = readExecutionPlanSteps(brainRoot)

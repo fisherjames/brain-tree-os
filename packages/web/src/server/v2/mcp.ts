@@ -179,6 +179,12 @@ function parseStringJsonArray(value: unknown): string[] {
   }
 }
 
+function parseLayerPath(value: unknown): Array<'squad' | 'tribe' | 'director' | 'ceo'> {
+  const out = parseStringJsonArray(value)
+    .filter((item) => item === 'squad' || item === 'tribe' || item === 'director' || item === 'ceo') as Array<'squad' | 'tribe' | 'director' | 'ceo'>
+  return out
+}
+
 function parseDiscussionQuestions(params: Record<string, unknown>, fallback: string): string[] {
   const fromList = Array.isArray(params.questions)
     ? params.questions.map((item) => String(item).trim()).filter(Boolean)
@@ -1007,6 +1013,7 @@ export function runV2McpCall(brainId: string, method: string, params: Record<str
       const nextQuestions = questions.includes(escalationQuestion) ? questions : [...questions, escalationQuestion]
       const currentLayer = (String(current.layer || 'squad') as 'squad' | 'tribe' | 'director')
       const escalationTarget = nextEscalationTarget(currentLayer)
+      const escalationPath = Array.from(new Set([...parseLayerPath(current.escalation_path_json), currentLayer, escalationTarget]))
       const escalationActor =
         typeof params.actor === 'string' && params.actor.trim()
           ? params.actor.trim()
@@ -1044,6 +1051,13 @@ export function runV2McpCall(brainId: string, method: string, params: Record<str
           recommendation: 'CEO decision required to unblock downstream execution.',
           human_verification: 'Verify impact before merge.',
           actor: 'founder-ceo',
+          required_context_level: 'ceo',
+          authority_scope_json: '["ceo"]',
+          decision_policy: 'ceo_required',
+          inferable: 'false',
+          confidence: '0.42',
+          escalation_reason: `Escalated from ${currentLayer} discussion ${discussionId}.`,
+          escalation_path_json: JSON.stringify(escalationPath),
         })
         appendSectionLine(
           discussionPath,
@@ -1070,6 +1084,28 @@ export function runV2McpCall(brainId: string, method: string, params: Record<str
           open_questions_json: JSON.stringify([escalationQuestion]),
           outcomes_json: JSON.stringify([]),
           personas_json: JSON.stringify(participants),
+          escalation_path_json: JSON.stringify(escalationPath),
+        })
+        const authorityScope = escalationTarget === 'director' ? '["director"]' : '["tribe"]'
+        createRecord(brain.path, 'decisions', `${newDiscussionTitle} decision`, {
+          initiative_id: String(current.initiative_id || ''),
+          status: 'pending',
+          outcome: 'pending',
+          decision_question: ensureYesNoQuestion(escalationQuestion, newDiscussionTitle),
+          decision_mode: 'yes_no',
+          decision_options_json: '[]',
+          selected_option: '',
+          rationale: `Escalated from ${currentLayer} layer discussion ${discussionId}.`,
+          recommendation: `Resolve at ${escalationTarget} level unless unresolved.`,
+          human_verification: 'Verify impact before merge.',
+          actor: escalationTarget === 'director' ? 'director' : 'tribe-head',
+          required_context_level: escalationTarget,
+          authority_scope_json: authorityScope,
+          decision_policy: 'delegated_approval',
+          inferable: 'false',
+          confidence: '0.55',
+          escalation_reason: `Escalated from ${currentLayer}.`,
+          escalation_path_json: JSON.stringify(escalationPath),
         })
         const escalatedPath = findRecordPath(brain.path, 'discussions', escalated.id)
         if (escalatedPath) {
@@ -1155,6 +1191,13 @@ export function runV2McpCall(brainId: string, method: string, params: Record<str
       recommendation: typeof params.recommendation === 'string' ? params.recommendation : 'Approve if risks are owned and rollback is clear.',
       human_verification: typeof params.human_verification === 'string' ? params.human_verification : 'Run feature verification before merge.',
       actor: typeof params.actor === 'string' ? params.actor : 'founder-ceo',
+      required_context_level: typeof params.requiredContextLevel === 'string' ? params.requiredContextLevel : 'director',
+      authority_scope_json: JSON.stringify(Array.isArray(params.authorityScope) ? params.authorityScope : ['director']),
+      decision_policy: typeof params.decisionPolicy === 'string' ? params.decisionPolicy : 'delegated_approval',
+      inferable: String(typeof params.inferable === 'boolean' ? params.inferable : false),
+      confidence: String(typeof params.confidence === 'number' ? params.confidence : 0.5),
+      escalation_reason: typeof params.escalationReason === 'string' ? params.escalationReason : '',
+      escalation_path_json: JSON.stringify(Array.isArray(params.escalationPath) ? params.escalationPath : []),
     })
     const event = lifecycleEvent(brainId, method, {
       ...params,
@@ -1506,5 +1549,5 @@ export function runV2McpCall(brainId: string, method: string, params: Record<str
     }
   }
 
-  throw new Error(`unsupported_v2_method:${method}`)
+  throw new Error(`unsupported_method:${method}`)
 }

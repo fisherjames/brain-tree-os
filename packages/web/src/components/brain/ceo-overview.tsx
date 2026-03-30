@@ -45,8 +45,8 @@ export default function CeoOverview({
 
   const refresh = useCallback(async () => {
     const [stateRes, briefingsRes] = await Promise.all([
-      fetch(`/api/v2/brains/${brainId}/company-state`, { cache: 'no-store' }),
-      fetch(`/api/v2/brains/${brainId}/director-briefings`, { cache: 'no-store' }),
+      fetch(`/api/brains/${brainId}/company-state`, { cache: 'no-store' }),
+      fetch(`/api/brains/${brainId}/briefings`, { cache: 'no-store' }),
     ])
     if (stateRes.ok) setState((await stateRes.json()) as CompanyState)
     if (briefingsRes.ok) {
@@ -67,7 +67,7 @@ export default function CeoOverview({
     <div className="h-full overflow-y-auto bg-[#F7F6F1] p-4 text-[13px] text-text">
       <div className="mb-4 rounded border border-border bg-white p-3">
         <div className="text-[11px] uppercase tracking-wide text-text-muted">CEO Mission</div>
-        <div className="text-[12px] text-text-secondary">Initiatives, decisions, briefings, and blockers only.</div>
+        <div className="text-[12px] text-text-secondary">CEO-by-exception: fully escalated decisions, strategic blockers, and briefings.</div>
         <div className="mt-1 text-[12px] text-text-muted">
           Director status: {director?.status ?? 'unknown'} · confidence {director?.confidence ?? 0}%
         </div>
@@ -92,7 +92,7 @@ export default function CeoOverview({
       </div>
 
       <div className="mb-4 rounded border border-border bg-white p-3">
-        <div className="mb-2 text-[11px] uppercase tracking-wide text-text-muted">Decisions</div>
+        <div className="mb-2 text-[11px] uppercase tracking-wide text-text-muted">Escalated CEO Decisions</div>
         {(state?.pendingDecisions ?? []).map((decision) => (
           <div key={decision.id} className="mb-2 rounded border border-border/70 bg-[#FCFCFA] p-2 text-[12px] last:mb-0">
             <div className="font-medium">{decision.title}</div>
@@ -106,7 +106,7 @@ export default function CeoOverview({
             </button>
           </div>
         ))}
-        {(state?.pendingDecisions ?? []).length === 0 && <div className="text-[12px] text-text-muted">No pending decisions.</div>}
+        {(state?.pendingDecisions ?? []).length === 0 && <div className="text-[12px] text-text-muted">No CEO-required decisions pending.</div>}
       </div>
 
       <div className="mb-4 rounded border border-border bg-white p-3">

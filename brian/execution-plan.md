@@ -2,47 +2,30 @@
 
 > Part of [[index]]
 
-## Phase 1 - V2 Core Product
+## Phase 1 - Greenfield Foundation
 
-### EP-1 Director decision quality
+### EP-1 Canonical lifecycle only
 - **Status**: in_progress
-- **Goal**: All decisions and escalations carry explicit yes/no questions and are resolved as confirmed or denied.
+- **Goal**: Remove split-era semantics and run one lifecycle contract only.
 
-### EP-2 Mission Control + Tribe split
+### EP-2 Delegated decision routing
 - **Status**: in_progress
-- **Goal**: Squad-level orchestration is in Mission Control, tribe-level triage is in the Tribe tab.
+- **Goal**: Route decisions by authority/context ladder and keep CEO exception-only.
 
-### EP-3 Notes baseline reset
+### EP-3 Surface simplification
 - **Status**: in_progress
-- **Goal**: Brian notes are V2-only and preserve product direction from prior learning.
+- **Goal**: Make each tab single-purpose with explicit actions and no dead controls.
 
-## Phase 2 - Deliverable Readiness
+## Phase 2 - Operational Reliability
 
-### EP-4 CEO context clarity
+### EP-4 Merge and verification integrity
 - **Status**: in_progress
-- **Goal**: Pending decisions/escalations include enough context for one-click approve/deny without noisy logs.
+- **Goal**: Enforce verification-before-merge with actionable blocker states.
 
-### EP-5 Record navigation reliability
+### EP-5 Notes and graph evidence clarity
 - **Status**: in_progress
-- **Goal**: Every initiative, discussion, decision, and briefing in CEO view opens its source markdown note reliably.
+- **Goal**: Keep records clickable and rationale complete across discussions/decisions/briefings.
 
-### EP-6 Dogfood automation loop
+### EP-6 Dogfood lifecycle confidence
 - **Status**: in_progress
-- **Goal**: Run repeated initiative cycles from UI and finish with clean merge/worktree state.
-
-## CEO Plan Rework
-### 2026-03-29T12:56:02.867Z
-- Prompt: Prioritize CEO context clarity and clickable record detail this sprint.
-- Next objective: EP-1 Director decision quality
-- Rework focus:
-  - Keep explicit decision and escalation questions in all approval gates.
-  - Keep initiative flow aligned to workflow contract without stage skipping.
-  - Keep merge gated by human verification and conflict-free state.
-
-### 2026-03-29T17:30:00.000Z
-- Prompt: Close README gap initiatives with real lifecycle execution and enforce coherent V2-only runtime behavior.
-- Next objective: EP-4 CEO context clarity
-- Rework focus:
-  - Enforce execution policy metadata from Agent Lab assignments during `initiative.execute`.
-  - Improve Agent Lab catalog curation signals in CEO Mission (score + freshness + query hits).
-  - Use safe autopilot start/state/stop with governance-safe blocking and explicit operator feedback.
+- **Goal**: Complete repeated lifecycle runs from intent to merge with clean state transitions.

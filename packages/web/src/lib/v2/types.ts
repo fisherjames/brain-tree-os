@@ -90,6 +90,13 @@ export type V2Decision = {
   selectedOption?: string
   outcome: 'pending' | 'confirmed' | 'denied'
   rationale: string
+  requiredContextLevel: 'squad' | 'tribe' | 'director' | 'ceo'
+  authorityScope: Array<'squad' | 'tribe' | 'director' | 'ceo'>
+  decisionPolicy: 'auto_infer' | 'delegated_approval' | 'ceo_required'
+  inferable: boolean
+  confidence: number
+  escalationReason: string
+  escalationPath: Array<'squad' | 'tribe' | 'director' | 'ceo'>
   filePath: string
   at: string
 }

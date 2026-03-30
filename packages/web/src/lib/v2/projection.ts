@@ -9,6 +9,10 @@ import type {
   V2Stage,
 } from './types'
 
+function isDecisionLayer(value: string): value is 'squad' | 'tribe' | 'director' | 'ceo' {
+  return value === 'squad' || value === 'tribe' || value === 'director' || value === 'ceo'
+}
+
 function extractTitle(content: string): string {
   const line = content.split('\n').find((l) => l.startsWith('# '))
   return line ? line.replace(/^#\s+/, '').trim() : 'Untitled'
@@ -54,6 +58,26 @@ export function loadInitiatives(brainPath: string, events: V2Event[]): V2Initiat
     const stage = (fm.stage as V2Stage) || 'intent'
     const createdAt = fm.created_at || new Date().toISOString()
     const updatedAt = fm.updated_at || createdAt
+    const authorityScope: V2Decision['authorityScope'] = (() => {
+      try {
+        const parsed = JSON.parse(String(fm.authority_scope_json || '["director"]'))
+        return Array.isArray(parsed)
+          ? parsed.map((item) => String(item).trim()).filter(isDecisionLayer)
+          : ['director']
+      } catch {
+        return ['director']
+      }
+    })()
+    const escalationPath: V2Decision['escalationPath'] = (() => {
+      try {
+        const parsed = JSON.parse(String(fm.escalation_path_json || '[]'))
+        return Array.isArray(parsed)
+          ? parsed.map((item) => String(item).trim()).filter(isDecisionLayer)
+          : []
+      } catch {
+        return []
+      }
+    })()
     return {
       id,
       title: fm.title || extractTitle(record.content),
@@ -135,6 +159,26 @@ export function loadDecisions(brainPath: string): V2Decision[] {
         return []
       }
     })()
+    const authorityScope: V2Decision['authorityScope'] = (() => {
+      try {
+        const parsed = JSON.parse(String(fm.authority_scope_json || '["director"]'))
+        return Array.isArray(parsed)
+          ? parsed.map((item) => String(item).trim()).filter(isDecisionLayer)
+          : ['director']
+      } catch {
+        return ['director']
+      }
+    })()
+    const escalationPath: V2Decision['escalationPath'] = (() => {
+      try {
+        const parsed = JSON.parse(String(fm.escalation_path_json || '[]'))
+        return Array.isArray(parsed)
+          ? parsed.map((item) => String(item).trim()).filter(isDecisionLayer)
+          : []
+      } catch {
+        return []
+      }
+    })()
     return {
       id: fm.id || record.relPath.replace(/^.*\//, '').replace(/\.md$/, ''),
       title,
@@ -146,10 +190,28 @@ export function loadDecisions(brainPath: string): V2Decision[] {
       selectedOption: fm.selected_option || undefined,
       outcome: (String(fm.outcome || 'pending') as V2Decision['outcome']),
       rationale: fm.rationale || '',
+      requiredContextLevel: (String(fm.required_context_level || 'director') as V2Decision['requiredContextLevel']),
+      authorityScope,
+      decisionPolicy: (String(fm.decision_policy || 'delegated_approval') as V2Decision['decisionPolicy']),
+      inferable: String(fm.inferable || 'false') === 'true',
+      confidence: Number(fm.confidence || '0') || 0,
+      escalationReason: String(fm.escalation_reason || ''),
+      escalationPath,
       filePath: record.relPath,
       at: fm.at || new Date().toISOString(),
     }
   }).sort((a, b) => b.at.localeCompare(a.at))
+}
+
+function isCeoDecision(decision: V2Decision): boolean {
+  const fullEscalation =
+    decision.escalationPath.includes('squad') &&
+    decision.escalationPath.includes('tribe') &&
+    decision.escalationPath.includes('director') &&
+    decision.escalationPath.includes('ceo')
+  const noDelegatedAuthority = !decision.authorityScope.some((scope) => scope === 'squad' || scope === 'tribe' || scope === 'director')
+  return decision.requiredContextLevel === 'ceo'
+    && (fullEscalation || decision.decisionPolicy === 'ceo_required' || (!decision.inferable && noDelegatedAuthority))
 }
 
 export function loadBriefings(brainPath: string): V2Briefing[] {
@@ -185,7 +247,7 @@ export function buildCompanyState(brainId: string, brainPath: string): V2Company
 
   for (const initiative of initiatives) pipeline[initiative.stage] += 1
 
-  const pendingDecisions = decisions.filter((decision) => decision.status === 'pending')
+  const pendingDecisions = decisions.filter((decision) => decision.status === 'pending' && isCeoDecision(decision))
   const activeEscalations = discussions.filter((d) => d.escalationState === 'pending' || d.status === 'escalated')
   const executionActive = initiatives.filter((initiative) => initiative.stage === 'execution' && initiative.status === 'active').length
 

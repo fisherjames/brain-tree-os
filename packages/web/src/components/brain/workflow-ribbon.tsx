@@ -34,8 +34,8 @@ function deriveCurrentStage(state: CompanyState | null): string {
 
 function nextActionForTab(tabId: string): string {
   if (tabId === 'mission') return 'Define/approve priorities and clear pending decisions.'
-  if (tabId === 'directors') return 'Resolve pending decisions/escalations with explicit yes/no or option answers.'
-  if (tabId === 'tribe-direction') return 'Resolve open questions, shape scope, and escalate only when needed.'
+  if (tabId === 'directors') return 'Resolve director-level decisions and escalate only if authority/context is insufficient.'
+  if (tabId === 'tribe-direction') return 'Resolve tribe-level decisions and escalate only if authority/context is insufficient.'
   if (tabId === 'mission-control') return 'Run one task, verify outcome, then merge safely.'
   if (tabId === 'agents-workflow') return 'Adjust personas, rules, and skills only when flow quality drops.'
   return 'Inspect notes and graph only when you need deeper context.'
@@ -46,7 +46,7 @@ export default function WorkflowRibbon({ brainId, activeTabId }: { brainId: stri
   const [isMobile, setIsMobile] = useState(false)
 
   const refresh = useCallback(async () => {
-    const res = await fetch(`/api/v2/brains/${brainId}/company-state`, { cache: 'no-store' })
+    const res = await fetch(`/api/brains/${brainId}/company-state`, { cache: 'no-store' })
     if (!res.ok) return
     setState((await res.json()) as CompanyState)
   }, [brainId])

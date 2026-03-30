@@ -137,6 +137,7 @@ export default function TeamTracker({
   const [actionError, setActionError] = useState<string | null>(null)
   const [hasSeenConnected, setHasSeenConnected] = useState(false)
   const [connectionGraceExpired, setConnectionGraceExpired] = useState(false)
+  const [lastUpdateAt, setLastUpdateAt] = useState<string>('')
   const { connected, events, call } = useMcpTeam(brainId)
 
   useEffect(() => setSteps(executionSteps), [executionSteps])
@@ -163,6 +164,7 @@ export default function TeamTracker({
       }
       if (repoRes.ok && repoRes.result?.repo) setRepoState(repoRes.result.repo)
       if (suggestionRes.ok && suggestionRes.result) setServerSuggested(suggestionRes.result.suggested ?? '')
+      setLastUpdateAt(new Date().toISOString())
     }
 
     void refreshRuntimeState()
@@ -283,7 +285,10 @@ export default function TeamTracker({
     return ''
   }, [openNextItems, runActive, runState?.label, suggested])
   const hasRunnableSuggestion = useMemo(
-    () => !/^no suggestion available$/i.test(suggested) && !/^no pending suggestion$/i.test(suggested),
+    () =>
+      !/^no suggestion available$/i.test(suggested) &&
+      !/^no pending suggestion$/i.test(suggested) &&
+      !/^awaiting backlog synthesis$/i.test(suggested),
     [suggested]
   )
 
@@ -338,6 +343,7 @@ export default function TeamTracker({
       if (res.ok && res.result?.observer) {
         setObserver(res.result.observer)
       }
+      setLastUpdateAt(new Date().toISOString())
     } finally {
       setBusy(null)
       await refreshSnapshot()
@@ -378,7 +384,7 @@ export default function TeamTracker({
             <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${statusPill(systemStatus)}`}>{systemStatus.replace('_', ' ')}</span>
             <span className="text-[12px] text-text-muted">Branch: {repoState?.branch ?? '...'}</span>
           </div>
-          <p className="mt-1 text-[12px] text-text-muted">Squad-level orchestration for active execution, verification, and worktree merge flow.</p>
+          <p className="mt-1 text-[12px] text-text-muted">Squad execution command center: run work, verify outcomes, merge verified worktrees.</p>
           <p className="mt-1 text-[12px] text-text-muted">{suggested}</p>
           {currentTask && (
             <div className={`mt-2 rounded-md border p-2 ${systemStatus === 'blocked' ? 'border-[#D95B5B]/40 bg-[#D95B5B]/10' : 'border-border/70 bg-bg'}`}>
@@ -461,9 +467,12 @@ export default function TeamTracker({
             >
               Force Cleanup
             </button>
-            <span className="text-[12px] text-text-muted">Run: {runState && runActive ? `${runState.status} (${runState.actor ?? 'worker'})` : 'idle'}</span>
+            <span className="text-[12px] text-text-muted">Run state: {runState && runActive ? `${runState.status} (${runState.actor ?? 'worker'})` : 'idle'}</span>
             <span className="text-[12px] text-text-muted">
               Observer: {observer?.active ? `on (ticks ${observer.ticks}, tasks ${observer.addedTasks})` : 'off'}
+            </span>
+            <span className="text-[12px] text-text-muted">
+              Last update: {lastUpdateAt ? new Date(lastUpdateAt).toLocaleTimeString('en-GB', { hour12: false }) : 'pending'}
             </span>
             <button
               onClick={() => apply('team.observer_start', {}, 'observer-start')}

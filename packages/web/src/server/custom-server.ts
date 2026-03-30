@@ -10,7 +10,7 @@ import { addGlobalListener } from './global-watcher'
 import { getBrainPathForId, getSuggestedTask, runTeamMcpCall } from './team-board-mcp'
 import { isV2Method, runV2McpCall } from './v2/mcp'
 
-const dev = process.env.NODE_ENV !== 'production'
+const dev = process.env.NODE_ENV === 'development'
 const port = parseInt(process.env.PORT || '3000', 10)
 
 function isWebProjectRoot(candidate: string): boolean {
@@ -85,14 +85,21 @@ const activeChildren = new Map<string, ChildProcess>()
 const teamObservers = new Map<string, TeamObserver>()
 
 function verifyNextBuildArtifacts(root: string): { ok: true } | { ok: false; missing: string[] } {
-  const required = [
-    '.next/BUILD_ID',
-    '.next/build-manifest.json',
-    '.next/required-server-files.json',
-    '.next/server/middleware-manifest.json',
-    '.next/server/webpack-runtime.js',
-  ]
+  const required = ['.next/build-manifest.json', '.next/server/middleware-manifest.json']
   const missing = required.filter((rel) => !fs.existsSync(path.join(root, rel)))
+
+  // Next.js artifact names can vary slightly by version/build mode.
+  const runtimeCandidates = ['.next/server/webpack-runtime.js', '.next/server/webpack-api-runtime.js']
+  if (!runtimeCandidates.some((rel) => fs.existsSync(path.join(root, rel)))) {
+    missing.push('one of: .next/server/webpack-runtime.js | .next/server/webpack-api-runtime.js')
+  }
+
+  // BUILD_ID / required-server-files can be absent in some app-dir/server setups.
+  const idOrRequiredCandidates = ['.next/BUILD_ID', '.next/required-server-files.json']
+  if (!idOrRequiredCandidates.some((rel) => fs.existsSync(path.join(root, rel)))) {
+    missing.push('one of: .next/BUILD_ID | .next/required-server-files.json')
+  }
+
   if (missing.length > 0) return { ok: false, missing }
   return { ok: true }
 }
@@ -501,14 +508,13 @@ function startCodexRunForSuggestion(wss: WebSocketServer, brainId: string) {
 
 const preflight = verifyNextBuildArtifacts(projectRoot)
 if (!dev && !preflight.ok) {
-  console.error(
+  console.warn(
     [
-      '> Brian startup blocked: missing Next.js build artifacts.',
-      '> Run `npm run build --workspace=packages/web` then restart.',
+      '> Brian startup warning: expected Next.js artifacts are missing or non-standard.',
+      '> Attempting startup anyway; if boot fails, run `npm run build --workspace=packages/web`.',
       `> Missing:\n${preflight.missing.map((rel) => `- ${rel}`).join('\n')}`,
     ].join('\n')
   )
-  process.exit(1)
 }
 
 app.prepare().then(() => {
