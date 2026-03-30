@@ -1,11 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useMcpTeam } from '@/hooks/use-mcp-team'
 
 type CompanyState = {
   directorInbox: Array<{ status: 'green' | 'yellow' | 'red'; confidence: number }>
   initiatives: Array<{ id: string; title: string; stage: string; status: string; summary: string; filePath: string }>
-  pendingDecisions: Array<{ id: string; title: string; question: string; rationale: string; status: string; filePath: string }>
+  pendingDecisions: Array<{ id: string; title: string; question: string; rationale: string; status: string; filePath: string; initiativeId?: string }>
   blockers: Array<{ code: string; message: string; class: 'hard_blocker' }>
   advisories?: Array<{ code: string; message: string; class: 'advisory' }>
 }
@@ -40,8 +41,12 @@ export default function CeoOverview({
   brainId: string
   onOpenRecord?: (path: string) => void
 }) {
+  const { call, connected } = useMcpTeam(brainId)
   const [state, setState] = useState<CompanyState | null>(null)
   const [briefings, setBriefings] = useState<Briefing[]>([])
+  const [newInitiativeTitle, setNewInitiativeTitle] = useState('')
+  const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState('')
 
   const refresh = useCallback(async () => {
     const [stateRes, briefingsRes] = await Promise.all([
@@ -63,6 +68,76 @@ export default function CeoOverview({
 
   const director = state?.directorInbox?.[0]
 
+  async function createInitiativeFlow() {
+    const title = newInitiativeTitle.trim()
+    if (!title) return
+    setBusy('create')
+    setError('')
+    try {
+      const intent = await call<{ message?: string }>('company.intent.capture', {
+        title,
+        summary: `CEO-initiated initiative: ${title}`,
+        actor: 'founder-ceo',
+      })
+      if (!intent.ok || !intent.result?.message) throw new Error(intent.error || 'intent_capture_failed')
+      const initiativeId = intent.result.message.split(':')[1]?.trim()
+      if (!initiativeId) throw new Error('initiative_id_missing')
+
+      const proposed = await call('initiative.propose', {
+        initiativeId,
+        title,
+        summary: `Director proposal drafted for ${title}`,
+        actor: 'director',
+      })
+      if (!proposed.ok) throw new Error(proposed.error || 'initiative_propose_failed')
+
+      const decision = await call('decision.record', {
+        initiativeId,
+        title: `Approve director proposal: ${title}`,
+        question: `Should we approve the director proposal for "${title}"?`,
+        rationale: 'Director has returned proposal package and is requesting CEO approval.',
+        requiredContextLevel: 'ceo',
+        authorityScope: ['ceo'],
+        decisionPolicy: 'ceo_required',
+        inferable: false,
+        confidence: 0.45,
+        escalationReason: 'CEO approval required before shaping.',
+        escalationPath: ['squad', 'tribe', 'director', 'ceo'],
+        actor: 'director',
+      })
+      if (!decision.ok) throw new Error(decision.error || 'decision_record_failed')
+
+      setNewInitiativeTitle('')
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'create_flow_failed')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function resolveDecision(decisionId: string, initiativeId: string | undefined, status: 'approved' | 'rejected') {
+    setBusy(`${status}-${decisionId}`)
+    setError('')
+    try {
+      const resolved = await call('decision.resolve', { decisionId, status, actor: 'founder-ceo' })
+      if (!resolved.ok) throw new Error(resolved.error || 'decision_resolve_failed')
+      if (status === 'approved' && initiativeId) {
+        const shaped = await call('initiative.shape', {
+          initiativeId,
+          actor: 'tribe-head',
+          summary: 'CEO approved proposal; tribe shaping begins.',
+        })
+        if (!shaped.ok) throw new Error(shaped.error || 'initiative_shape_failed')
+      }
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'decision_resolution_failed')
+    } finally {
+      setBusy(null)
+    }
+  }
+
   return (
     <div className="h-full overflow-y-auto bg-[#F7F6F1] p-4 text-[13px] text-text">
       <div className="mb-4 rounded border border-border bg-white p-3">
@@ -71,6 +146,22 @@ export default function CeoOverview({
         <div className="mt-1 text-[12px] text-text-muted">
           Director status: {director?.status ?? 'unknown'} · confidence {director?.confidence ?? 0}%
         </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <input
+            value={newInitiativeTitle}
+            onChange={(event) => setNewInitiativeTitle(event.target.value)}
+            placeholder="New initiative title"
+            className="min-w-[220px] flex-1 rounded border border-border px-2 py-1.5 text-[12px]"
+          />
+          <button
+            onClick={() => void createInitiativeFlow()}
+            disabled={!connected || busy === 'create' || !newInitiativeTitle.trim()}
+            className="rounded border border-border px-2.5 py-1.5 text-[12px] disabled:opacity-50"
+          >
+            Create Initiative
+          </button>
+        </div>
+        <div className="mt-1 text-[11px] text-text-muted">Creates initiative, requests director proposal, and opens CEO decision gate.</div>
       </div>
 
       <div className="mb-4 rounded border border-border bg-white p-3">
@@ -104,6 +195,31 @@ export default function CeoOverview({
             >
               Open decision
             </button>
+            {decision.initiativeId && (
+              <a
+                href={`/api/brains/${brainId}/proposals/${decision.initiativeId}`}
+                download
+                className="ml-2 mt-1 inline-block rounded border border-border px-2 py-0.5 text-[11px] text-text-muted hover:bg-text/5"
+              >
+                Download proposal PDF
+              </a>
+            )}
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                disabled={busy === `approved-${decision.id}`}
+                onClick={() => void resolveDecision(decision.id, decision.initiativeId, 'approved')}
+                className="rounded border border-[#5B9A65]/40 bg-[#5B9A65]/5 px-2 py-1 text-[11px] text-[#5B9A65] disabled:opacity-50"
+              >
+                Accept
+              </button>
+              <button
+                disabled={busy === `rejected-${decision.id}`}
+                onClick={() => void resolveDecision(decision.id, decision.initiativeId, 'rejected')}
+                className="rounded border border-[#D95B5B]/40 bg-[#D95B5B]/5 px-2 py-1 text-[11px] text-[#D95B5B] disabled:opacity-50"
+              >
+                Reject
+              </button>
+            </div>
           </div>
         ))}
         {(state?.pendingDecisions ?? []).length === 0 && <div className="text-[12px] text-text-muted">No CEO-required decisions pending.</div>}
@@ -146,6 +262,7 @@ export default function CeoOverview({
           </div>
         )}
       </div>
+      {error && <div className="mt-3 rounded border border-[#D95B5B]/40 bg-[#D95B5B]/10 p-2 text-[12px] text-[#D95B5B]">{error}</div>}
     </div>
   )
 }

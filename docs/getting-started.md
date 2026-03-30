@@ -33,6 +33,10 @@ brian brief
 ```
 
 ## Planning Behavior
+- CEO creates initiative first.
+- Directors return proposal as downloadable PDF.
+- CEO accepts/rejects proposal in CEO View.
+- On accept, tribe shapes and squads proceed.
 - `brian plan` opens squad discussion and emits a question set.
 - Resolution flow:
   - Team Lead -> Product Owner first.
@@ -40,6 +44,7 @@ brian brief
   - Remaining questions escalate stepwise to tribe, then director, then CEO.
 - Only CEO-level escalation pauses planning.
 - If CEO escalation is not required, planning auto-advances to execution.
+- Proposal PDF links are mobile-download friendly.
 
 ## How Tabs Map To Workflow
 - `CEO Mission`: only final escalations/strategic blockers/briefings

@@ -48,14 +48,23 @@ export default function DirectorConsole({
 }) {
   const { call, connected } = useMcpTeam(brainId)
   const [decisions, setDecisions] = useState<Decision[]>([])
+  const [initiatives, setInitiatives] = useState<Array<{ id: string; title: string; stage: string; status: string; summary: string; filePath: string }>>([])
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState('')
 
   const refresh = useCallback(async () => {
-    const res = await fetch(`/api/brains/${brainId}/decisions`, { cache: 'no-store' })
-    if (!res.ok) return
-    const json = (await res.json()) as { decisions?: Array<Partial<Decision>> }
-    setDecisions(Array.isArray(json.decisions) ? json.decisions.map((item) => normalizeDecision(item ?? {})) : [])
+    const [decisionRes, initiativeRes] = await Promise.all([
+      fetch(`/api/brains/${brainId}/decisions`, { cache: 'no-store' }),
+      fetch(`/api/brains/${brainId}/initiatives`, { cache: 'no-store' }),
+    ])
+    if (decisionRes.ok) {
+      const json = (await decisionRes.json()) as { decisions?: Array<Partial<Decision>> }
+      setDecisions(Array.isArray(json.decisions) ? json.decisions.map((item) => normalizeDecision(item ?? {})) : [])
+    }
+    if (initiativeRes.ok) {
+      const json = (await initiativeRes.json()) as { initiatives?: Array<{ id: string; title: string; stage: string; status: string; summary: string; filePath: string }> }
+      setInitiatives(Array.isArray(json.initiatives) ? json.initiatives : [])
+    }
   }, [brainId])
 
   useEffect(() => {
@@ -69,6 +78,10 @@ export default function DirectorConsole({
   const inbox = useMemo(
     () => decisions.filter((item) => item.status === 'pending' && item.requiredContextLevel === 'director'),
     [decisions]
+  )
+  const proposalItems = useMemo(
+    () => initiatives.filter((initiative) => initiative.stage === 'proposal' || initiative.stage === 'director_decision'),
+    [initiatives]
   )
 
   const resolve = useCallback(async (decisionId: string, status: 'approved' | 'rejected') => {
@@ -130,6 +143,35 @@ export default function DirectorConsole({
       </div>
 
       <div className="rounded border border-border bg-white p-3">
+        <div className="mb-3 text-[11px] uppercase tracking-wide text-text-muted">Director Proposals (PDF)</div>
+        {proposalItems.length === 0 ? (
+          <div className="mb-4 text-[12px] text-text-muted">No proposal-stage initiatives.</div>
+        ) : (
+          <div className="mb-4 grid gap-2">
+            {proposalItems.map((initiative) => (
+              <div key={initiative.id} className="rounded border border-border/70 bg-[#FCFCFA] p-2 text-[12px]">
+                <div className="font-medium">{initiative.title}</div>
+                <div className="text-[11px] text-text-muted">{initiative.stage} · {initiative.status}</div>
+                <div className="mt-1 flex flex-wrap gap-2">
+                  <a
+                    href={`/api/brains/${brainId}/proposals/${initiative.id}`}
+                    download
+                    className="rounded border border-border px-2 py-1 text-[11px] text-text-muted hover:bg-text/5"
+                  >
+                    Download Proposal PDF
+                  </a>
+                  <button
+                    onClick={() => onOpenRecord?.(initiative.filePath)}
+                    className="rounded border border-border px-2 py-1 text-[11px] text-text-muted hover:bg-text/5"
+                  >
+                    Open Initiative
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="mb-2 text-[11px] uppercase tracking-wide text-text-muted">Pending Director Decisions</div>
         {inbox.length === 0 ? (
           <div className="text-[12px] text-text-muted">No pending director decisions.</div>

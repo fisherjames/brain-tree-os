@@ -9,13 +9,18 @@ Brian runs work through an explicit organizational ladder. Decisions are resolve
 `intent -> proposal -> leadership discussion -> director decision -> tribe shaping -> squad planning -> execution -> verification -> merge -> briefing`
 
 ## Planning Contract (Explicit)
-- `brian plan <initiative-id> --squad "<name>"` starts a squad planning discussion and generates a question set.
+- CEO creates initiative.
+- Directors return a proposal package as downloadable PDF.
+- CEO receives explicit decision in CEO View and accepts/rejects.
+- After acceptance, tribe shapes; squads then plan and execute.
+- `brian plan <initiative-id> --squad "<name>"` starts squad planning discussion and generates a question set.
 - Discussion chain is fixed:
   - Team Lead asks Product Owner first.
   - Product Owner answers within authority/context.
   - Unresolved items escalate stepwise: tribe -> director -> CEO.
 - Planning is paused only when escalation reaches CEO.
 - If escalation does not reach CEO, planning auto-advances directly to execution.
+- Proposal PDF download works from mobile and desktop.
 
 ## Decision Governance
 - Escalation chain is fixed: `squad -> tribe -> director -> ceo`

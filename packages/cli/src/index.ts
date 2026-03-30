@@ -2488,22 +2488,26 @@ async function main() {
       console.log('  Run `brian init` first.')
       return
     }
-    const title = args.join(' ').trim()
-    if (!title) {
-      console.log('  Usage: brian propose <name>')
+    const first = args[0]?.trim() ?? ''
+    const rest = args.slice(1).join(' ').trim()
+    if (!first) {
+      console.log('  Usage: brian propose <title> | brian propose <initiative-id> [title]')
       return
     }
-    const id = `initiative-${crypto.randomUUID().slice(0, 8)}`
-    const note = writeInitiativeRecord(brainRoot, { id, title, stage: 'proposal', summary: title })
+    const initiatives = listV2Initiatives(brainRoot)
+    const existing = initiatives.find((item) => item.id.toLowerCase() === first.toLowerCase())
+    const id = existing?.id ?? `initiative-${crypto.randomUUID().slice(0, 8)}`
+    const title = rest || existing?.title || first
+    const note = writeInitiativeRecord(brainRoot, { id, title, stage: 'proposal', summary: `Director proposal drafted for ${title}` })
     appendV2Event(brainRoot, {
-      actor: 'product-lead',
-      layer: 'tribe',
+      actor: 'director',
+      layer: 'director',
       stage: 'proposal',
       kind: 'initiative_created',
-      message: `proposal created: ${title}`,
+      message: existing ? `proposal updated: ${title}` : `proposal created: ${title}`,
       initiativeId: id,
     })
-    console.log(`  Proposal created: ${id}`)
+    console.log(`  Proposal ${existing ? 'updated' : 'created'}: ${id}`)
     console.log(`  Note: ${note}`)
     return
   }
