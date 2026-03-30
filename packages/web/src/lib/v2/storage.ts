@@ -9,6 +9,7 @@ const V2_DIRS = [
   path.join('brian', 'initiatives'),
   path.join('brian', 'discussions'),
   path.join('brian', 'decisions'),
+  path.join('brian', 'proposals'),
   path.join('brian', 'briefings'),
   path.join('brian', 'tasks'),
 ] as const
@@ -18,6 +19,7 @@ const V2_INDEXES: Array<[string, string]> = [
   [path.join('brian', 'initiatives', 'index.md'), '# initiatives\n\n> Part of [[index]]\n\n'],
   [path.join('brian', 'discussions', 'index.md'), '# discussions\n\n> Part of [[index]]\n\n'],
   [path.join('brian', 'decisions', 'index.md'), '# decisions\n\n> Part of [[index]]\n\n'],
+  [path.join('brian', 'proposals', 'index.md'), '# proposals\n\n> Part of [[index]]\n\n'],
   [path.join('brian', 'briefings', 'index.md'), '# briefings\n\n> Part of [[index]]\n\n'],
   [path.join('brian', 'tasks', 'index.md'), '# tasks\n\n> Part of [[index]]\n\n'],
 ]

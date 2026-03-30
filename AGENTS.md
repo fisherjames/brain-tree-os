@@ -24,6 +24,7 @@ Brian is a delegated company operating system in markdown.
 - `brian mission <initiative-id> --squad <name>` is execution setup only.
 - Mission outputs worktree-mapped `NEXT` + `MERGE` queue entries and merge order.
 - Merge remains gated by human verification and conflict checks.
+- Final release action is Mission Control **Ship to Main** (merge queue + push to `origin/main` when all gates pass).
 
 ## Product Surfaces
 - CEO View: final escalations, strategic blockers, briefings.

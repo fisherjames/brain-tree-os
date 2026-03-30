@@ -89,3 +89,5 @@ brian verify
 brian merge
 brian brief
 ```
+
+Final shipping action is in Mission Control: **Ship to Main** (queue dry-run, merge, then push to `origin/main` behind verification/conflict gates).

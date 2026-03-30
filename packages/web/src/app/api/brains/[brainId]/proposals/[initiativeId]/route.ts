@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getBrain } from '@/lib/local-data'
 import { readV2ApiData } from '@/server/v2/mcp'
+import { listMarkdownRecords, parseFrontmatter } from '@/lib/v2/storage'
 
 function escapePdfText(input: string): string {
   return input.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
@@ -65,18 +66,77 @@ export async function GET(
   const initiative = models.initiatives.find((item) => item.id === initiativeId)
   if (!initiative) return NextResponse.json({ error: 'initiative_not_found' }, { status: 404 })
 
+  const proposals = listMarkdownRecords(brain.path, 'brian/proposals')
+    .map((record) => {
+      const fm = parseFrontmatter(record.content)
+      return {
+        relPath: record.relPath,
+        initiativeId: String(fm.initiative_id || ''),
+        title: String(fm.title || ''),
+        summary: String(fm.summary || ''),
+        recommendation: String(fm.recommendation || ''),
+        decisionQuestion: String(fm.decision_question || ''),
+        constraints: (() => {
+          try {
+            const parsed = JSON.parse(String(fm.constraints_json || '[]'))
+            return Array.isArray(parsed) ? parsed.map((item) => String(item).trim()).filter(Boolean) : []
+          } catch {
+            return [] as string[]
+          }
+        })(),
+        options: (() => {
+          try {
+            const parsed = JSON.parse(String(fm.options_json || '[]'))
+            return Array.isArray(parsed) ? parsed.map((item) => String(item).trim()).filter(Boolean) : []
+          } catch {
+            return [] as string[]
+          }
+        })(),
+        risks: (() => {
+          try {
+            const parsed = JSON.parse(String(fm.risks_json || '[]'))
+            return Array.isArray(parsed) ? parsed.map((item) => String(item).trim()).filter(Boolean) : []
+          } catch {
+            return [] as string[]
+          }
+        })(),
+        evidence: (() => {
+          try {
+            const parsed = JSON.parse(String(fm.discussion_evidence_json || '[]'))
+            return Array.isArray(parsed) ? parsed.map((item) => String(item).trim()).filter(Boolean) : []
+          } catch {
+            return [] as string[]
+          }
+        })(),
+        updatedAt: String(fm.updated_at || fm.created_at || ''),
+      }
+    })
+    .filter((item) => item.initiativeId === initiativeId)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  const proposal = proposals[0]
+
   const lines = [
     'Brian Director Proposal',
     '',
-    `Initiative: ${initiative.title}`,
-    `ID: ${initiative.id}`,
+    `Initiative: ${initiative.title} (${initiative.id})`,
     `Stage: ${initiative.stage}`,
     '',
-    'Proposal Summary',
-    initiative.summary || 'No summary provided.',
+    'Initiative Goal + Constraints',
+    proposal?.summary || initiative.summary || 'No summary provided.',
+    ...(proposal?.constraints?.length ? proposal.constraints.map((line) => `- ${line}`) : ['- No explicit constraints captured.']),
     '',
-    'Decision Request',
-    `Should CEO approve director proposal for "${initiative.title}"?`,
+    'Options and Rationale',
+    ...(proposal?.options?.length ? proposal.options.map((line) => `- ${line}`) : ['- Option set pending.']),
+    '',
+    'Risk Register + Mitigations',
+    ...(proposal?.risks?.length ? proposal.risks.map((line) => `- ${line}`) : ['- Risk register pending.']),
+    '',
+    'Discussion Evidence Excerpt',
+    ...(proposal?.evidence?.length ? proposal.evidence.map((line) => `- ${line}`) : ['- Evidence pending discussion capture.']),
+    '',
+    'Director Recommendation and Decision Question',
+    `Recommendation: ${proposal?.recommendation || 'Pending recommendation.'}`,
+    proposal?.decisionQuestion || `Should CEO approve director proposal for "${initiative.title}"?`,
     '',
     `Generated at: ${new Date().toISOString()}`,
   ]

@@ -1,0 +1,4 @@
+# proposals
+
+> Part of [[index]]
+

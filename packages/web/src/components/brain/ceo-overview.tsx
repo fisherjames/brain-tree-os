@@ -6,7 +6,19 @@ import { useMcpTeam } from '@/hooks/use-mcp-team'
 type CompanyState = {
   directorInbox: Array<{ status: 'green' | 'yellow' | 'red'; confidence: number }>
   initiatives: Array<{ id: string; title: string; stage: string; status: string; summary: string; filePath: string }>
-  pendingDecisions: Array<{ id: string; title: string; question: string; rationale: string; status: string; filePath: string; initiativeId?: string }>
+  pendingDecisions: Array<{
+    id: string
+    title: string
+    question: string
+    rationale: string
+    status: string
+    filePath: string
+    initiativeId?: string
+    proposalId?: string
+    proposalPath?: string
+    discussionId?: string
+    discussionPath?: string
+  }>
   blockers: Array<{ code: string; message: string; class: 'hard_blocker' }>
   advisories?: Array<{ code: string; message: string; class: 'advisory' }>
 }
@@ -91,11 +103,37 @@ export default function CeoOverview({
       })
       if (!proposed.ok) throw new Error(proposed.error || 'initiative_propose_failed')
 
+      const discussion = await call<{ message?: string }>('discussion.open', {
+        initiativeId,
+        layer: 'director',
+        actor: 'director',
+        title: `${title} director discussion`,
+        question: `What option should we recommend to CEO for "${title}" and why?`,
+        questions: [
+          `What option should we recommend for "${title}"?`,
+          'Which risks are acceptable now versus deferred?',
+          'What verification evidence is mandatory before merge?',
+        ],
+      })
+      if (!discussion.ok || !discussion.result?.message) throw new Error(discussion.error || 'director_discussion_open_failed')
+      const discussionId = discussion.result.message.split(':')[1]?.trim()
+      if (!discussionId) throw new Error('discussion_id_missing')
+
+      const proposal = await call<{
+        proposal?: { id: string; filePath: string; decisionQuestion: string; recommendation: string; discussionId: string }
+      }>('proposal.generate', {
+        initiativeId,
+        discussionId,
+        actor: 'director',
+      })
+      if (!proposal.ok || !proposal.result?.proposal) throw new Error(proposal.error || 'proposal_generate_failed')
+      const proposalRef = proposal.result.proposal
+
       const decision = await call('decision.record', {
         initiativeId,
         title: `Approve director proposal: ${title}`,
-        question: `Should we approve the director proposal for "${title}"?`,
-        rationale: 'Director has returned proposal package and is requesting CEO approval.',
+        question: proposalRef.decisionQuestion,
+        rationale: `Director has returned a full proposal packet. Recommendation: ${proposalRef.recommendation}`,
         requiredContextLevel: 'ceo',
         authorityScope: ['ceo'],
         decisionPolicy: 'ceo_required',
@@ -104,6 +142,10 @@ export default function CeoOverview({
         escalationReason: 'CEO approval required before shaping.',
         escalationPath: ['squad', 'tribe', 'director', 'ceo'],
         actor: 'director',
+        proposalId: proposalRef.id,
+        proposalPath: proposalRef.filePath,
+        discussionId: proposalRef.discussionId,
+        discussionPath: `brian/discussions/${proposalRef.discussionId}.md`,
       })
       if (!decision.ok) throw new Error(decision.error || 'decision_record_failed')
 
@@ -195,6 +237,22 @@ export default function CeoOverview({
             >
               Open decision
             </button>
+            {decision.discussionPath && (
+              <button
+                onClick={() => onOpenRecord?.(decision.discussionPath!)}
+                className="ml-2 mt-1 rounded border border-border px-2 py-0.5 text-[11px] text-text-muted hover:bg-text/5"
+              >
+                Open discussion
+              </button>
+            )}
+            {decision.proposalPath && (
+              <button
+                onClick={() => onOpenRecord?.(decision.proposalPath!)}
+                className="ml-2 mt-1 rounded border border-border px-2 py-0.5 text-[11px] text-text-muted hover:bg-text/5"
+              >
+                Open proposal
+              </button>
+            )}
             {decision.initiativeId && (
               <a
                 href={`/api/brains/${brainId}/proposals/${decision.initiativeId}`}

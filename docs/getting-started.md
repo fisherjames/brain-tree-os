@@ -32,6 +32,8 @@ brian merge
 brian brief
 ```
 
+In the viewer, finish with Mission Control **Ship to Main** to merge verified queue items and push `origin/main`.
+
 ## Planning Behavior
 - CEO creates initiative first.
 - Directors return proposal as downloadable PDF.

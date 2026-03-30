@@ -83,6 +83,10 @@ export type V2Decision = {
   id: string
   title: string
   initiativeId?: string
+  proposalId?: string
+  proposalPath?: string
+  discussionId?: string
+  discussionPath?: string
   status: 'pending' | 'approved' | 'rejected'
   question: string
   mode: 'yes_no' | 'multi_option'

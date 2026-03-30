@@ -55,6 +55,14 @@ type McpResult = {
     details: Array<{ item: string; status: 'ready' | 'blocked' | 'merged'; reason?: string }>
     recommendedOrder?: string[]
   }
+  ship?: {
+    pushed: boolean
+    remote: 'origin'
+    branch: 'main'
+    commitShas: string[]
+    message: string
+    at: string
+  }
   squads?: SquadConfig[]
   activeSquadId?: string
   agentCatalog?: Array<{ id: string; label: string }>
@@ -1178,6 +1186,82 @@ export function runTeamMcpCall(
         merged,
         details,
         recommendedOrder: ordered.recommendedOrder,
+      },
+    }
+  }
+
+  if (method === 'team.merge_queue_ship') {
+    const preRepo = gitRepoState(brainPath)
+    if (preRepo.branch !== 'main') {
+      return {
+        message: `ship_blocked:not_on_main:${preRepo.branch}`,
+        snapshot: snapshotForBrain(brainPath),
+        repo: preRepo,
+      }
+    }
+    if (preRepo.hardBlockers.length > 0) {
+      return {
+        message: `ship_blocked:hard_blockers:${preRepo.hardBlockers.length}`,
+        snapshot: snapshotForBrain(brainPath),
+        repo: preRepo,
+      }
+    }
+
+    const dryRun = runTeamMcpCall(brainId, 'team.merge_queue_dry_run', {})
+    const dryBlocked = dryRun.mergeQueue?.details?.find((item) => item.status === 'blocked')
+    if (dryBlocked) {
+      return {
+        message: `ship_blocked:dry_run:${dryBlocked.reason ?? 'blocked'}`,
+        snapshot: dryRun.snapshot,
+        repo: dryRun.repo ?? gitRepoState(brainPath),
+        mergeQueue: dryRun.mergeQueue,
+      }
+    }
+
+    const merged = runTeamMcpCall(brainId, 'team.merge_queue_execute', {})
+    if (!merged.message.startsWith('merge_queue_execute:completed')) {
+      return {
+        message: `ship_blocked:${merged.message}`,
+        snapshot: merged.snapshot,
+        repo: merged.repo ?? gitRepoState(brainPath),
+        conflictSummary: merged.conflictSummary,
+        mergePreview: merged.mergePreview,
+        mergeQueue: merged.mergeQueue,
+      }
+    }
+
+    const push = tryGit(brainPath, ['push', 'origin', 'main'])
+    if (!push.ok) {
+      return {
+        message: 'ship_blocked:push_failed',
+        snapshot: merged.snapshot,
+        repo: gitRepoState(brainPath),
+        mergeQueue: merged.mergeQueue,
+        conflictSummary: push.error,
+        ship: {
+          pushed: false,
+          remote: 'origin',
+          branch: 'main',
+          commitShas: [],
+          message: push.error || 'git push failed',
+          at: new Date().toISOString(),
+        },
+      }
+    }
+
+    const head = safeGit(brainPath, ['rev-parse', 'HEAD'])
+    return {
+      message: `ship_completed:${head || 'unknown_sha'}`,
+      snapshot: merged.snapshot,
+      repo: gitRepoState(brainPath),
+      mergeQueue: merged.mergeQueue,
+      ship: {
+        pushed: true,
+        remote: 'origin',
+        branch: 'main',
+        commitShas: head ? [head] : [],
+        message: 'Merged queue and pushed to origin/main',
+        at: new Date().toISOString(),
       },
     }
   }

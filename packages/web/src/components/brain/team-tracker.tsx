@@ -66,6 +66,14 @@ type SnapshotResult = {
     details: Array<{ item: string; status: 'ready' | 'blocked' | 'merged'; reason?: string }>
     recommendedOrder?: string[]
   }
+  ship?: {
+    pushed: boolean
+    remote: 'origin'
+    branch: 'main'
+    commitShas: string[]
+    message: string
+    at: string
+  }
   observer?: {
     active: boolean
     ticks: number
@@ -136,6 +144,7 @@ export default function TeamTracker({
   const [serverSuggested, setServerSuggested] = useState('')
   const [mergePreviewText, setMergePreviewText] = useState('')
   const [mergeQueueText, setMergeQueueText] = useState('')
+  const [shipSummaryText, setShipSummaryText] = useState('')
   const [dragMerge, setDragMerge] = useState<{ stepId: string; taskIndex: number } | null>(null)
   const [observer, setObserver] = useState<SnapshotResult['observer'] | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -358,6 +367,16 @@ export default function TeamTracker({
         ].filter(Boolean)
         setMergeQueueText(lines.join('\n'))
       }
+      if (res.ok && res.result?.ship) {
+        const ship = res.result.ship
+        const lines = [
+          `Ship: ${ship.pushed ? 'pushed' : 'failed'} ${ship.remote}/${ship.branch}`,
+          ship.commitShas.length > 0 ? `Commits: ${ship.commitShas.join(', ')}` : 'Commits: none',
+          `Message: ${ship.message}`,
+          `At: ${new Date(ship.at).toLocaleString('en-GB', { hour12: false })}`,
+        ]
+        setShipSummaryText(lines.join('\n'))
+      }
       if (res.ok && typeof res.result?.suggested === 'string') {
         setServerSuggested(res.result.suggested)
       }
@@ -504,11 +523,11 @@ export default function TeamTracker({
               Dry Run Queue
             </button>
             <button
-              onClick={() => apply('team.merge_queue_execute', {}, 'merge-queue-exec')}
-              disabled={busy === 'merge-queue-exec' || !connected || needsVerification || Boolean(repoState?.hasConflicts)}
+              onClick={() => apply('team.merge_queue_ship', {}, 'merge-queue-ship')}
+              disabled={busy === 'merge-queue-ship' || !connected || needsVerification || Boolean(repoState?.hasConflicts)}
               className="min-h-9 rounded-md border border-border bg-bg px-3 py-2 text-[12px] text-text-secondary hover:bg-text/5 disabled:opacity-50"
             >
-              Merge Worktrees
+              Ship to Main
             </button>
             <button
               onClick={() => apply('team.cleanup_worktrees', {}, 'cleanup-wt')}
@@ -615,6 +634,9 @@ export default function TeamTracker({
           )}
           {mergeQueueText && (
             <pre className="mt-2 max-h-[180px] overflow-auto rounded-md border border-border bg-bg p-2 text-[11px] text-text-secondary">{mergeQueueText}</pre>
+          )}
+          {shipSummaryText && (
+            <pre className="mt-2 max-h-[180px] overflow-auto rounded-md border border-[#5B9A65]/35 bg-[#5B9A65]/8 p-2 text-[11px] text-[#2F6A3B]">{shipSummaryText}</pre>
           )}
         </div>
 
