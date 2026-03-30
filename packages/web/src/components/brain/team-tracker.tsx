@@ -225,7 +225,7 @@ export default function TeamTracker({
     if (unstarted) return `Start step ${unstarted.phase_number}.${unstarted.step_number}: ${unstarted.title}`
     const inProgress = teamSteps.find((s) => s.status === 'in_progress')
     if (inProgress) return `Continue step ${inProgress.phase_number}.${inProgress.step_number}: ${inProgress.title}`
-    return 'Awaiting backlog synthesis'
+    return 'No queued work yet. Start planning discussion to create queue items.'
   }, [openNextItems, serverSuggested, teamSteps])
 
   const verificationStepId = useMemo(() => {
@@ -293,15 +293,17 @@ export default function TeamTracker({
 
   const currentTask = useMemo(() => {
     if (runActive && runState?.label) return runState.label
+    if (runState?.status === 'awaiting_approval' && runState.label) return runState.label
+    if (runState?.status === 'blocked' && runState.blockerReason) return `Blocked: ${runState.blockerReason}`
     if (openNextItems.length > 0) return openNextItems[0].text
     if (!/^no suggestion available$/i.test(suggested) && !/^no pending suggestion$/i.test(suggested)) return suggested
     return ''
-  }, [openNextItems, runActive, runState?.label, suggested])
+  }, [openNextItems, runActive, runState?.blockerReason, runState?.label, runState?.status, suggested])
   const hasRunnableSuggestion = useMemo(
     () =>
       !/^no suggestion available$/i.test(suggested) &&
       !/^no pending suggestion$/i.test(suggested) &&
-      !/^awaiting backlog synthesis$/i.test(suggested),
+      !/^no queued work yet\./i.test(suggested),
     [suggested]
   )
 
@@ -413,7 +415,7 @@ export default function TeamTracker({
             <span className="text-[12px] text-text-muted">Branch: {repoState?.branch ?? '...'}</span>
           </div>
           <p className="mt-1 text-[12px] text-text-muted">Squad execution command center: run work, verify outcomes, merge verified worktrees.</p>
-          <p className="mt-1 text-[12px] text-text-muted">{suggested}</p>
+          <p className="mt-1 text-[12px] text-text-muted">Next action: {suggested}</p>
           <div className="mt-2 rounded-md border border-border/70 bg-bg p-2">
             <p className="text-[11px] font-medium text-text-secondary">Squad</p>
             <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -439,7 +441,7 @@ export default function TeamTracker({
           )}
           {!hasRunnableSuggestion && (
             <div className="mt-2 rounded-md border border-border/70 bg-bg p-2 text-[12px] text-text-muted">
-              No runnable suggestion yet. Add a `NEXT:` task or start observer to synthesize the next queue.
+              No runnable next task yet. Run <code>brian plan &lt;initiative-id&gt; --squad &lt;name&gt;</code> to generate queue items, or start the discussion loop.
             </div>
           )}
           {!connected && (
@@ -514,7 +516,7 @@ export default function TeamTracker({
             </button>
             <span className="text-[12px] text-text-muted">Run state: {runState && runActive ? `${runState.status} (${runState.actor ?? 'worker'})` : 'idle'}</span>
             <span className="text-[12px] text-text-muted">
-              Observer: {observer?.active ? `on (ticks ${observer.ticks}, tasks ${observer.addedTasks})` : 'off'}
+              Discussion loop: {observer?.active ? `on (ticks ${observer.ticks}, tasks ${observer.addedTasks})` : 'off'}
             </span>
             <span className="text-[12px] text-text-muted">
               Last update: {lastUpdateAt ? new Date(lastUpdateAt).toLocaleTimeString('en-GB', { hour12: false }) : 'pending'}
@@ -642,7 +644,7 @@ export default function TeamTracker({
                 <p className="text-[12px] text-text-muted">
                   {mergeItems.length > 0
                     ? 'Queue is consumed. Complete verification/merge on active worktrees or run observer for new work.'
-                    : 'No queued tasks. Add `NEXT:` tasks with feature/worktree metadata or run observer.'}
+                    : 'No queued tasks. Run planning to create `NEXT:` tasks with feature/worktree metadata, or run the discussion loop.'}
                 </p>
               )}
             </div>
