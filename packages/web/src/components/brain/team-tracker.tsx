@@ -531,14 +531,14 @@ export default function TeamTracker({
               disabled={busy === 'observer-start' || observer?.active || !connected}
               className="rounded-md border border-border bg-bg px-2.5 py-1.5 text-[12px] text-text-secondary hover:bg-text/5 disabled:opacity-50"
             >
-              Start Observer
+              Start Discussion Loop
             </button>
             <button
               onClick={() => apply('team.observer_stop', {}, 'observer-stop')}
               disabled={busy === 'observer-stop' || !observer?.active || !connected}
               className="rounded-md border border-border bg-bg px-2.5 py-1.5 text-[12px] text-text-secondary hover:bg-text/5 disabled:opacity-50"
             >
-              Stop Observer
+              Stop Discussion Loop
             </button>
           </div>
 
