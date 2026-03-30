@@ -53,6 +53,7 @@ type McpResult = {
     merged: number
     blockedAt?: string
     details: Array<{ item: string; status: 'ready' | 'blocked' | 'merged'; reason?: string }>
+    recommendedOrder?: string[]
   }
   squads?: SquadConfig[]
   activeSquadId?: string
@@ -577,6 +578,59 @@ function collectMergeQueue(snapshot: Snapshot): Array<{ stepId: string; taskInde
   return queue
 }
 
+function authoritativelyOrderMergeQueue(
+  brainPath: string,
+  snapshot: Snapshot,
+  queue: Array<{ stepId: string; taskIndex: number; text: string }>
+): {
+  ordered: Array<{ stepId: string; taskIndex: number; text: string }>
+  details: Array<{ item: string; status: 'ready' | 'blocked' | 'merged'; reason?: string }>
+  recommendedOrder: string[]
+} {
+  const analyzed = queue.map((item) => {
+    const step = snapshot.executionSteps.find((s) => s.id === item.stepId)
+    const mergeMeta = parseMergeInstruction(item.text)
+    if (!mergeMeta) {
+      return { item, status: 'blocked' as const, reason: 'missing_worktree_metadata', score: Number.MAX_SAFE_INTEGER }
+    }
+    const taskValidation = validateMergeTaskText(item.text)
+    if (!taskValidation.ok) {
+      return { item, status: 'blocked' as const, reason: taskValidation.reason ?? 'invalid_merge_metadata', score: Number.MAX_SAFE_INTEGER - 1 }
+    }
+    if (!hasVerificationForStep(step)) {
+      return { item, status: 'blocked' as const, reason: 'verification_required', score: Number.MAX_SAFE_INTEGER - 2 }
+    }
+    const preview = previewMerge(brainPath, mergeMeta.sourceBranch, mergeMeta.targetBranch)
+    if (preview.hasConflicts) {
+      return { item, status: 'blocked' as const, reason: 'preview_conflict', score: Number.MAX_SAFE_INTEGER - 3 }
+    }
+    const score = preview.filesChanged.length
+    return { item, status: 'ready' as const, reason: undefined, score, mergeMeta, preview }
+  })
+
+  const ordered = analyzed
+    .slice()
+    .sort((a, b) => {
+      if (a.status === 'ready' && b.status !== 'ready') return -1
+      if (a.status !== 'ready' && b.status === 'ready') return 1
+      if (a.score !== b.score) return a.score - b.score
+      const aBranch = parseMergeInstruction(a.item.text)?.sourceBranch ?? a.item.text
+      const bBranch = parseMergeInstruction(b.item.text)?.sourceBranch ?? b.item.text
+      return aBranch.localeCompare(bBranch)
+    })
+    .map((entry) => entry.item)
+
+  const details = analyzed.map((entry) => ({
+    item: entry.item.text,
+    status: entry.status,
+    reason: entry.reason,
+  }))
+  const recommendedOrder = ordered
+    .map((item) => parseMergeInstruction(item.text)?.sourceBranch)
+    .filter((value): value is string => Boolean(value))
+  return { ordered, details, recommendedOrder }
+}
+
 function hasVerificationForStep(step: ExecutionStep | undefined): boolean {
   return (step?.tasks_json ?? []).some((task) => task.done && task.text.toUpperCase().startsWith('VERIFY:'))
 }
@@ -1049,30 +1103,8 @@ export function runTeamMcpCall(
   if (method === 'team.merge_queue_dry_run') {
     const current = snapshotForBrain(brainPath)
     const queue = collectMergeQueue(current)
-    const details: Array<{ item: string; status: 'ready' | 'blocked' | 'merged'; reason?: string }> = []
-    for (const item of queue) {
-      const step = current.executionSteps.find((s) => s.id === item.stepId)
-      const mergeMeta = parseMergeInstruction(item.text)
-      if (!mergeMeta) {
-        details.push({ item: item.text, status: 'blocked', reason: 'missing_worktree_metadata' })
-        continue
-      }
-      const taskValidation = validateMergeTaskText(item.text)
-      if (!taskValidation.ok) {
-        details.push({ item: item.text, status: 'blocked', reason: taskValidation.reason ?? 'invalid_merge_metadata' })
-        continue
-      }
-      if (!hasVerificationForStep(step)) {
-        details.push({ item: item.text, status: 'blocked', reason: 'verification_required' })
-        continue
-      }
-      const preview = previewMerge(brainPath, mergeMeta.sourceBranch, mergeMeta.targetBranch)
-      if (preview.hasConflicts) {
-        details.push({ item: item.text, status: 'blocked', reason: 'preview_conflict' })
-        continue
-      }
-      details.push({ item: item.text, status: 'ready' })
-    }
+    const ordered = authoritativelyOrderMergeQueue(brainPath, current, queue)
+    const details = ordered.details
     const blockedAt = details.find((d) => d.status === 'blocked')?.item
     return {
       message: blockedAt ? 'merge_queue_dry_run:blocked' : 'merge_queue_dry_run:ready',
@@ -1083,6 +1115,7 @@ export function runTeamMcpCall(
         merged: 0,
         blockedAt,
         details,
+        recommendedOrder: ordered.recommendedOrder,
       },
     }
   }
@@ -1090,10 +1123,26 @@ export function runTeamMcpCall(
   if (method === 'team.merge_queue_execute') {
     const initial = snapshotForBrain(brainPath)
     const queue = collectMergeQueue(initial)
+    const ordered = authoritativelyOrderMergeQueue(brainPath, initial, queue)
+    const blockedAtPrecheck = ordered.details.find((d) => d.status === 'blocked')
+    if (blockedAtPrecheck) {
+      return {
+        message: `merge_queue_execute:blocked:${blockedAtPrecheck.reason ?? 'blocked'}`,
+        snapshot: initial,
+        repo: gitRepoState(brainPath),
+        mergeQueue: {
+          total: queue.length,
+          merged: 0,
+          blockedAt: blockedAtPrecheck.item,
+          details: ordered.details,
+          recommendedOrder: ordered.recommendedOrder,
+        },
+      }
+    }
     const details: Array<{ item: string; status: 'ready' | 'blocked' | 'merged'; reason?: string }> = []
     let merged = 0
 
-    for (const item of queue) {
+    for (const item of ordered.ordered) {
       const result = runTeamMcpCall(brainId, 'team.merge_item', { stepId: item.stepId, taskIndex: item.taskIndex })
       if (result.message.startsWith('merge_marked:')) {
         merged++
@@ -1113,6 +1162,7 @@ export function runTeamMcpCall(
           merged,
           blockedAt: item.text,
           details,
+          recommendedOrder: ordered.recommendedOrder,
         },
       }
     }
@@ -1127,6 +1177,7 @@ export function runTeamMcpCall(
         total: queue.length,
         merged,
         details,
+        recommendedOrder: ordered.recommendedOrder,
       },
     }
   }

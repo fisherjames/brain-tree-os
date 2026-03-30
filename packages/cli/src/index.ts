@@ -959,6 +959,7 @@ function appendSquadPlanningQueue(
   const next = (nums.length > 0 ? Math.max(...nums) + 1 : 1)
   const stepNumber = `99.${next}`
   const members = squad.memberAgentIds.length > 0 ? squad.memberAgentIds : ['project-operator']
+  const provisionalMergeOrder = [...new Set(members)].sort((a, b) => mergePriority(a) - mergePriority(b))
   const queued = members.map((member) => `squad-discussion:${initiativeId}:${member}`)
   const nextTasks = members.map((member) =>
     `- [ ] NEXT: feature="Plan ${initiativeTitle} (${member})" owner=${member} initiative=${initiativeId} image=pending breaking=none`
@@ -970,6 +971,7 @@ function appendSquadPlanningQueue(
     `- **Squad**: ${squad.name} (${squad.id})`,
     `- **Initiative**: ${initiativeId}`,
     '- **Mode**: squad discussion and queue shaping (no worktrees yet)',
+    `- **Provisional Merge Order**: ${provisionalMergeOrder.join(' -> ')}`,
     ...nextTasks,
     '- [ ] BLOCKER: Capture unresolved questions that require escalation.',
     '',

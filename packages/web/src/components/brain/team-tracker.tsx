@@ -64,6 +64,7 @@ type SnapshotResult = {
     merged: number
     blockedAt?: string
     details: Array<{ item: string; status: 'ready' | 'blocked' | 'merged'; reason?: string }>
+    recommendedOrder?: string[]
   }
   observer?: {
     active: boolean
@@ -353,6 +354,7 @@ export default function TeamTracker({
         const q = res.result.mergeQueue
         const lines = [
           `Queue: total=${q.total} merged=${q.merged}${q.blockedAt ? ` blockedAt="${q.blockedAt}"` : ''}`,
+          q.recommendedOrder?.length ? `Recommended order: ${q.recommendedOrder.join(' -> ')}` : '',
           ...q.details.slice(0, 40).map((d) => `- [${d.status}] ${d.item}${d.reason ? ` (${d.reason})` : ''}`),
           q.details.length > 40 ? `... +${q.details.length - 40} more` : '',
         ].filter(Boolean)
