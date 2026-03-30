@@ -25,6 +25,7 @@ brian intent "Improve checkout conversion"
 brian propose "Checkout conversion initiative"
 brian shape <initiative-id>
 brian plan <initiative-id> --squad "Core Squad"
+brian mission <initiative-id> --squad "Core Squad"
 brian work
 brian verify
 brian merge
@@ -44,7 +45,7 @@ brian brief
 - `CEO Mission`: only final escalations/strategic blockers/briefings
 - `Directors`: director decisions escalated from tribe
 - `Tribe`: tribe decisions escalated from squad
-- `Product Owner View`: squad-context decisions (before tribe escalation)
+- `Product Owner View`: squad-context decisions (after tribe tab in UI)
 - `Mission Control`: execution, verification, merge gates
 - `Graph + Notes`: evidence + rationale source records
 - `Agents + Workflow`: edit personas, skills, and workflow rules

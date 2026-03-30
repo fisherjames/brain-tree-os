@@ -45,7 +45,7 @@ Brian runs work through an explicit organizational ladder. Decisions are resolve
 - `brian propose <title>`
 - `brian shape <initiative-id>`
 - `brian plan <initiative-id> [--squad <name>]`
-- `brian mission <name> [--squad <name>]`
+- `brian mission <initiative-id> [--squad <name>]`
 - `brian work`
 - `brian verify`
 - `brian merge`
@@ -77,7 +77,8 @@ brian init
 brian intent "Improve activation"
 brian propose "Activation initiative"
 brian shape <initiative-id>
-brian plan <initiative-id>
+brian plan <initiative-id> --squad "Core Squad"
+brian mission <initiative-id> --squad "Core Squad"
 brian work
 brian verify
 brian merge

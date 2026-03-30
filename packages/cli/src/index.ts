@@ -1208,7 +1208,8 @@ function commandPromptSummary(brainRoot: string) {
   console.log('  - brian intent "<initiative intent>"')
   console.log('  - brian propose "<initiative title>"')
   console.log('  - brian shape <initiative-id>')
-  console.log('  - brian plan <initiative-id>')
+  console.log('  - brian plan <initiative-id> [--squad <name>]')
+  console.log('  - brian mission <initiative-id> [--squad <name>]')
   console.log('  - brian work [--role <role>]')
   console.log('  - brian end [--role <role>]')
   console.log('  - brian brief')
@@ -2334,7 +2335,7 @@ function showHelp() {
     brian work                      Launch Codex with managed Brian start context
     brian verify                    Record verification gate for active initiative
     brian merge                     Record merge completion for active initiative
-    brian mission <name> [--squad <name>]  Prepare a mission packet + squad worktree queue
+    brian mission <initiative-id> [--squad <name>]  Generate execution worktrees/merge queue for planned initiative
     brian end                       Create handoff + launch managed wrap-up context
     brian brief                     Generate director briefing note
     brian decide <id> <title>       Record director decision
@@ -2867,20 +2868,19 @@ async function main() {
     const positionalArgs = removeOptionArgs(args, '--squad')
     const stepArg = positionalArgs[0]
     const initiatives = listV2Initiatives(brainRoot)
-    const looksLegacyStep = typeof stepArg === 'string' && /^ep-/i.test(stepArg)
     const initiativeMatch = stepArg ? initiatives.find((item) => item.id.toLowerCase() === stepArg.toLowerCase()) : null
-
-    if (!looksLegacyStep && (initiativeMatch || (initiatives.length > 0 && stepArg && !/^ep-/i.test(stepArg)))) {
-      if (!stepArg) {
-        console.log('  Usage: brian plan <initiative-id> [--squad <name>]')
-        return
-      }
-      if (!initiativeMatch) {
-        console.log(`  Initiative not found: ${stepArg}`)
-        console.log('  Available initiatives:')
-        for (const item of initiatives.slice(0, 10)) console.log(`  - ${item.id}: ${item.title}`)
-        return
-      }
+    if (!stepArg) {
+      console.log('  Usage: brian plan <initiative-id> [--squad <name>]')
+      console.log('  Available initiatives:')
+      for (const item of initiatives.slice(0, 10)) console.log(`  - ${item.id}: ${item.title}`)
+      return
+    }
+    if (!initiativeMatch) {
+      console.log(`  Initiative not found: ${stepArg}`)
+      console.log('  Available initiatives:')
+      for (const item of initiatives.slice(0, 10)) console.log(`  - ${item.id}: ${item.title}`)
+      return
+    }
       const squad = resolveSquad(brainRoot, squadName)
       const ceoEscalated = requiresCeoEscalation(initiativeMatch.title)
       const nextStage: V2Stage = ceoEscalated ? 'squad_planning' : 'execution'
@@ -2952,72 +2952,6 @@ async function main() {
         console.log('  Team board planning step already existed; no new queue items added.')
       }
       return
-    }
-
-    if (looksLegacyStep && stepArg) {
-      appendLegacyTelemetry(brainRoot, `brian plan ${stepArg}`, 'brian plan <initiative-id>')
-      console.log(`  Interpreting legacy execution-plan step "${stepArg}"`)
-      console.log('  Recommended command: brian plan <initiative-id>')
-    }
-
-    const executionPlan = readExecutionPlanSteps(brainRoot)
-    if (!executionPlan || executionPlan.steps.length === 0) {
-      console.log('  No parseable execution plan found.')
-      console.log('  Keep using Codex `/plan`, but add brian/execution-plan.md if you want Brian step planning.')
-      return
-    }
-
-    const completedIds = new Set(
-      executionPlan.steps.filter(step => step.status === 'completed').map(step => step.id)
-    )
-    const readySteps = executionPlan.steps.filter(step => {
-      if (step.status !== 'not_started') return false
-      return step.dependencies.every(dep => completedIds.has(dep))
-    })
-    const inProgressSteps = executionPlan.steps.filter(step => step.status === 'in_progress')
-
-    if (!stepArg) {
-      console.log('')
-      printSteps('In progress', inProgressSteps)
-      printSteps('Ready to plan', readySteps)
-      console.log('  Next:')
-      console.log('  - Run `brian plan <step-id>` to create a linked plan note.')
-      console.log('  - Optional: pass `--squad "<name>"` to bind queue generation to a squad roster.')
-      console.log('  - In Codex, use `/plan` for the conversation-level planning pass.')
-      console.log('')
-      return
-    }
-
-    const step = executionPlan.steps.find(candidate => candidate.id.toLowerCase() === stepArg.toLowerCase())
-    if (!step) {
-      console.log(`  Step not found: ${stepArg}`)
-      return
-    }
-
-    const operations = resolveFolderContext(brainRoot, [
-      { dir: path.join('brian', 'operations'), index: 'operations.md', name: 'operations' },
-    ])
-
-    if (!operations) {
-      console.log('  No Operations index found to attach the plan note.')
-      return
-    }
-
-    const fileName = `plan-${slugify(step.id)}.md`
-    const planPath = ensureLinkedNote(
-      operations.dir,
-      operations.indexPath,
-      operations.indexName,
-      fileName,
-      `plan ${step.id}`,
-      `## Step\n- **ID**: ${step.id}\n- **Title**: ${step.title}\n- **Phase**: ${step.phase}\n- **Dependencies**: ${step.dependencies.length > 0 ? step.dependencies.join(', ') : 'none'}\n\n## Goal\n${step.title}\n\n## Suggested Codex Prompt\nUse \`/plan\` in Codex with this request:\n\n\`/plan Propose an implementation plan for ${step.id}: ${step.title}. Read brian/index.md, AGENTS.md, brian/execution-plan.md, and this note first.\`\n\n## Tasks\n- [ ] Inspect the relevant notes and code paths\n- [ ] Break the work into concrete changes\n- [ ] Decide verification before editing\n- [ ] Record decisions and risks\n\n## Verification\n- Add the exact checks to run before execution starts.\n`
-    )
-
-    updateExecutionPlanStepStatus(executionPlan.path, step.id, 'in_progress')
-
-    console.log(`  Created step plan: ${planPath}`)
-    console.log('  Next in Codex: run `/plan` and reference this note plus brian/execution-plan.md.')
-    return
   }
 
   if (command === 'sprint') {
@@ -3097,25 +3031,34 @@ async function main() {
       console.log('  Run `brian init` first.')
       return
     }
-    warnLegacyAlias(brainRoot, 'mission')
-
     const squadName = parseOption(args, '--squad')
     const positionalArgs = removeOptionArgs(args, '--squad')
-    const featureName = positionalArgs.join(' ').trim()
-    if (!featureName) {
-      console.log('  Usage: brian mission <name> [--squad <name>]')
+    const initiativeId = positionalArgs[0]?.trim()
+    if (!initiativeId) {
+      console.log('  Usage: brian mission <initiative-id> [--squad <name>]')
       return
     }
-
-    const packet = createSpecPacket(brainRoot, featureName)
-    const stepId = appendMissionExecutionPlan(brainRoot, featureName, packet.slug)
+    const initiatives = listV2Initiatives(brainRoot)
+    const initiative = initiatives.find((item) => item.id.toLowerCase() === initiativeId.toLowerCase())
+    if (!initiative) {
+      console.log(`  Initiative not found: ${initiativeId}`)
+      console.log('  Available initiatives:')
+      for (const item of initiatives.slice(0, 10)) console.log(`  - ${item.id}: ${item.title} (${item.stage})`)
+      return
+    }
+    const featureName = initiative.title
     const squad = resolveSquad(brainRoot, squadName)
-    const teamStep = appendSquadMissionTeamBoard(brainRoot, featureName, stepId, squad)
+    const teamStep = appendSquadMissionTeamBoard(brainRoot, featureName, initiative.id, squad)
+    const notePath = writeInitiativeRecord(brainRoot, {
+      id: initiative.id,
+      title: initiative.title,
+      stage: 'execution',
+      summary: `Execution mission queued for ${initiative.title}`,
+    })
 
-    console.log(`  Mission prepared for "${featureName}"`)
+    console.log(`  Mission prepared for "${featureName}" (${initiative.id})`)
     console.log(`  Squad: ${squad.name} (${squad.id})`)
-    console.log(`  Spec packet: ${packet.dir}`)
-    console.log(`  Execution plan: ${stepId}`)
+    console.log(`  Initiative note: ${notePath}`)
     console.log(`  Team board: Step ${teamStep.stepNumber}`)
     if (teamStep.worktrees.length > 0) {
       console.log(`  Worktrees queued (${teamStep.worktrees.length}):`)
@@ -3124,7 +3067,7 @@ async function main() {
     } else {
       console.log('  Team board step already existed; no new worktrees added.')
     }
-    console.log('  Next: run `brian plan <initiative-id> --squad "' + squad.name + '"` then `brian work`.')
+    console.log('  Next: run `brian work`, then verify + merge through Mission Control.')
     return
   }
 

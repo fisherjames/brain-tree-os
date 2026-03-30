@@ -253,8 +253,10 @@ export function buildCompanyState(brainId: string, brainPath: string): V2Company
 
   const blockers: Array<{ code: string; message: string; class: 'hard_blocker' }> = []
   const advisories: Array<{ code: string; message: string; class: 'advisory' }> = []
-  if (activeEscalations.length > 0) {
-    blockers.push({ code: 'unresolved_escalations', class: 'hard_blocker', message: `${activeEscalations.length} escalations are unresolved` })
+  if (pendingDecisions.length > 0) {
+    blockers.push({ code: 'ceo_escalation_pending', class: 'hard_blocker', message: `${pendingDecisions.length} CEO escalation decision(s) are unresolved` })
+  } else if (activeEscalations.length > 0) {
+    advisories.push({ code: 'unresolved_escalations', class: 'advisory', message: `${activeEscalations.length} escalations are unresolved below CEO` })
   }
   const decisionsMissingQuestion = pendingDecisions.filter((decision) => !decision.question).length
   if (decisionsMissingQuestion > 0) {
