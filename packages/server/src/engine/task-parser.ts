@@ -20,6 +20,7 @@ export function parseExecutionPlan(brainRoot: string): ParsedTask[] {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
     const todoMatch = line.match(/^- \[ \] (.+)$/)
+    const progressMatch = line.match(/^- \[~\] (.+)$/)
     const doneMatch = line.match(/^- \[x\] (.+)$/)
 
     if (todoMatch) {
@@ -27,6 +28,13 @@ export function parseExecutionPlan(brainRoot: string): ParsedTask[] {
         id: crypto.createHash('sha256').update(todoMatch[1]).digest('hex').slice(0, 8),
         title: todoMatch[1],
         status: 'todo',
+        line: i + 1,
+      })
+    } else if (progressMatch) {
+      tasks.push({
+        id: crypto.createHash('sha256').update(progressMatch[1]).digest('hex').slice(0, 8),
+        title: progressMatch[1],
+        status: 'in_progress',
         line: i + 1,
       })
     } else if (doneMatch) {
@@ -70,4 +78,37 @@ export function markTaskStatus(
   }
 
   fs.writeFileSync(planPath, lines.join('\n'), 'utf8')
+}
+
+export function appendTasksToExecutionPlan(
+  brainRoot: string,
+  _intentId: string,
+  taskDescriptions: string[],
+): void {
+  const planPath = path.join(brainRoot, 'brian', 'execution-plan.md')
+
+  if (!fs.existsSync(planPath)) {
+    const dir = path.dirname(planPath)
+    fs.mkdirSync(dir, { recursive: true })
+    const initial = `# Execution Plan\n\n## Tasks\n\n${taskDescriptions.map((t) => `- [ ] ${t}`).join('\n')}\n`
+    fs.writeFileSync(planPath, initial, 'utf8')
+    return
+  }
+
+  const content = fs.readFileSync(planPath, 'utf8')
+  const existing = parseExecutionPlan(brainRoot)
+  const existingTitles = new Set(existing.map((t) => t.title))
+  const deduped = taskDescriptions.filter((t) => !existingTitles.has(t))
+  if (deduped.length === 0) return
+
+  const newTasks = deduped.map((t) => `- [ ] ${t}`).join('\n')
+
+  const tasksHeader = /^## Tasks$/m
+  if (tasksHeader.test(content)) {
+    const updated = content.replace(tasksHeader, `## Tasks\n\n${newTasks}`)
+    fs.writeFileSync(planPath, updated, 'utf8')
+  } else {
+    const appended = content.trimEnd() + `\n\n## Tasks\n\n${newTasks}\n`
+    fs.writeFileSync(planPath, appended, 'utf8')
+  }
 }

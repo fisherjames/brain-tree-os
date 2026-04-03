@@ -148,19 +148,20 @@ export const teamHandlers: Record<string, McpHandler> = {
 
   'team.merge_queue_dry_run': async (_params, brainRoot) => {
     const branch = getCurrentBranch(brainRoot)
-    if (branch === 'main' || branch === 'v2') return { canMerge: true, conflicts: [], branch }
+    if (branch === 'main' || branch === 'feat/v2-execution-tasks')
+      return { canMerge: true, conflicts: [], branch }
     return { branch, ...dryRunMerge(brainRoot, branch) }
   },
 
   'team.merge_queue_execute': async (_params, brainRoot) => {
     const branch = getCurrentBranch(brainRoot)
-    const target = 'v2'
+    const target = 'feat/v2-execution-tasks'
     if (branch === target) return { ok: true, message: `Already on ${target}` }
     return executeMerge(brainRoot, branch, target)
   },
 
   'team.merge_queue_ship': async (_params, brainRoot) => {
-    return pushToRemote(brainRoot, 'v2')
+    return pushToRemote(brainRoot, 'feat/v2-execution-tasks')
   },
 
   'team.create_mission_branch': async (params, brainRoot) => {

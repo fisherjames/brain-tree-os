@@ -31,23 +31,31 @@ export function getCurrentBranch(repoRoot: string): string {
 export function dryRunMerge(
   repoRoot: string,
   branch: string,
-  target = 'main',
+  target = 'feat/v2-execution-tasks',
 ): {
   canMerge: boolean
   conflicts: string[]
 } {
+  const originalBranch = getCurrentBranch(repoRoot)
   try {
+    execFileSync('git', ['checkout', target], { cwd: repoRoot, encoding: 'utf8' })
     execFileSync('git', ['merge', '--no-commit', '--no-ff', branch], {
       cwd: repoRoot,
       encoding: 'utf8',
     })
     execFileSync('git', ['merge', '--abort'], { cwd: repoRoot, encoding: 'utf8' })
+    execFileSync('git', ['checkout', originalBranch], { cwd: repoRoot, encoding: 'utf8' })
     return { canMerge: true, conflicts: [] }
   } catch (error) {
     try {
       execFileSync('git', ['merge', '--abort'], { cwd: repoRoot, encoding: 'utf8' })
     } catch {
       /* already aborted */
+    }
+    try {
+      execFileSync('git', ['checkout', originalBranch], { cwd: repoRoot, encoding: 'utf8' })
+    } catch {
+      /* best effort */
     }
     const output = error instanceof Error ? error.message : ''
     const conflicts = output

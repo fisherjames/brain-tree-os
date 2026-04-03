@@ -1,0 +1,21 @@
+{
+  "squads": [
+    {
+      "id": "core",
+      "name": "Core Squad",
+      "agents": [
+        {
+          "role": "engineer",
+          "skills": [
+            "typescript",
+            "react"
+          ],
+          "rules": [
+            "AGENTS.md"
+          ]
+        }
+      ],
+      "active": true
+    }
+  ]
+}

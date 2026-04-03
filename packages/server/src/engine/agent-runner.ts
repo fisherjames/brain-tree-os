@@ -102,14 +102,18 @@ export function startAgent(
 
   const codexBin = process.env.CODEX_BIN ?? 'codex'
 
-  childProcess = spawn(codexBin, ['--quiet', '--approval-mode', 'auto-edit', prompt], {
-    cwd: config.repoRoot,
-    env: {
-      ...process.env,
-      GIT_BRANCH: config.branch,
+  childProcess = spawn(
+    codexBin,
+    ['exec', '--full-auto', '-C', config.repoRoot, prompt],
+    {
+      cwd: config.repoRoot,
+      env: {
+        ...process.env,
+        GIT_BRANCH: config.branch,
+      },
+      stdio: ['pipe', 'pipe', 'pipe'],
     },
-    stdio: ['pipe', 'pipe', 'pipe'],
-  })
+  )
 
   currentRun.pid = childProcess.pid ?? null
 
