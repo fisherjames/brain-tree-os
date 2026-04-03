@@ -3,6 +3,7 @@ import * as path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { getBrain, getExecutionSteps, getHandoffs, scanBrainFiles } from '../lib/local-data'
 import { isExecutionPlanFile } from '../lib/execution-plan-parser'
+import { readV2Models } from '../lib/v2/projection'
 
 type StepStatus = 'not_started' | 'in_progress' | 'completed' | 'blocked'
 
@@ -66,12 +67,24 @@ type McpResult = {
   squads?: SquadConfig[]
   activeSquadId?: string
   agentCatalog?: Array<{ id: string; label: string }>
+  liveDemoGate?: {
+    ready: boolean
+    acknowledgedAt: string | null
+    actor: string | null
+  }
 }
 
 type WorktreeEntry = {
   path: string
   branch?: string
   detached: boolean
+}
+
+type ActiveInitiativeContext = {
+  id: string
+  title: string
+  missionBranch: string
+  scopedStepIds: Set<string>
 }
 
 type SquadConfig = {
@@ -83,6 +96,12 @@ type SquadConfig = {
 type SquadState = {
   activeSquadId: string
   squads: SquadConfig[]
+}
+
+type LiveDemoGateState = {
+  ready: boolean
+  acknowledgedAt: string | null
+  actor: string | null
 }
 
 const SQUAD_AGENT_CATALOG: Array<{ id: string; label: string }> = [
@@ -110,6 +129,10 @@ function missionControlStatePath(brainPath: string): string {
   return path.join(brainPath, '.brian', 'mission-control.json')
 }
 
+function liveDemoGatePath(brainPath: string): string {
+  return path.join(brainPath, '.brian', 'live-demo-gate.json')
+}
+
 function defaultSquadState(): SquadState {
   return {
     activeSquadId: 'squad-core',
@@ -121,6 +144,10 @@ function defaultSquadState(): SquadState {
       },
     ],
   }
+}
+
+function defaultLiveDemoGateState(): LiveDemoGateState {
+  return { ready: false, acknowledgedAt: null, actor: null }
 }
 
 function normalizeSquadState(input: Partial<SquadState> | null | undefined): SquadState {
@@ -166,6 +193,38 @@ function readSquadState(brainPath: string): SquadState {
 function writeSquadState(brainPath: string, state: SquadState): SquadState {
   const statePath = missionControlStatePath(brainPath)
   const normalized = normalizeSquadState(state)
+  fs.mkdirSync(path.dirname(statePath), { recursive: true })
+  fs.writeFileSync(statePath, JSON.stringify(normalized, null, 2) + '\n', 'utf8')
+  return normalized
+}
+
+function readLiveDemoGateState(brainPath: string): LiveDemoGateState {
+  const statePath = liveDemoGatePath(brainPath)
+  try {
+    if (!fs.existsSync(statePath)) {
+      const seeded = defaultLiveDemoGateState()
+      fs.mkdirSync(path.dirname(statePath), { recursive: true })
+      fs.writeFileSync(statePath, JSON.stringify(seeded, null, 2) + '\n', 'utf8')
+      return seeded
+    }
+    const raw = JSON.parse(fs.readFileSync(statePath, 'utf8')) as Partial<LiveDemoGateState>
+    return {
+      ready: Boolean(raw.ready),
+      acknowledgedAt: typeof raw.acknowledgedAt === 'string' && raw.acknowledgedAt.trim() ? raw.acknowledgedAt : null,
+      actor: typeof raw.actor === 'string' && raw.actor.trim() ? raw.actor.trim() : null,
+    }
+  } catch {
+    return defaultLiveDemoGateState()
+  }
+}
+
+function writeLiveDemoGateState(brainPath: string, state: LiveDemoGateState): LiveDemoGateState {
+  const normalized: LiveDemoGateState = {
+    ready: Boolean(state.ready),
+    acknowledgedAt: typeof state.acknowledgedAt === 'string' && state.acknowledgedAt.trim() ? state.acknowledgedAt : null,
+    actor: typeof state.actor === 'string' && state.actor.trim() ? state.actor.trim() : null,
+  }
+  const statePath = liveDemoGatePath(brainPath)
   fs.mkdirSync(path.dirname(statePath), { recursive: true })
   fs.writeFileSync(statePath, JSON.stringify(normalized, null, 2) + '\n', 'utf8')
   return normalized
@@ -325,10 +384,61 @@ function parseTaskMetadata(taskText: string, key: string): string | null {
   return match[1].replace(/^"|"$/g, '').trim()
 }
 
+function stepInitiativeMetadata(step: ExecutionStep): { initiativeId: string; missionBranch?: string } | null {
+  for (const task of step.tasks_json ?? []) {
+    const raw = task.text.trim()
+    if (!/^INITIATIVE:/i.test(raw)) continue
+    const initiativeId = parseTaskMetadata(raw, 'initiative_id') ?? parseTaskMetadata(raw, 'initiative')
+    if (!initiativeId) continue
+    const missionBranch = parseTaskMetadata(raw, 'mission_branch') ?? undefined
+    return { initiativeId, missionBranch }
+  }
+  return null
+}
+
+function resolveActiveInitiativeContext(brainId: string, brainPath: string, snapshot: Snapshot): ActiveInitiativeContext | null {
+  const models = readV2Models(brainId, brainPath)
+  const active =
+    models.initiatives.find((initiative) => initiative.stage === 'execution')
+    ?? models.initiatives.find((initiative) => initiative.stage === 'squad_planning')
+    ?? models.initiatives.find((initiative) => initiative.stage === 'tribe_shaping')
+    ?? models.initiatives.find((initiative) => initiative.stage === 'proposal')
+    ?? models.initiatives.find((initiative) => initiative.stage === 'intent')
+    ?? null
+  if (!active) return null
+
+  const scopedStepIds = new Set(
+    snapshot.executionSteps
+      .filter((step) => stepInitiativeMetadata(step)?.initiativeId === active.id)
+      .map((step) => step.id)
+  )
+  const missionBranch = `mission/${active.id}`
+  return {
+    id: active.id,
+    title: active.title,
+    missionBranch,
+    scopedStepIds,
+  }
+}
+
+function ensureLocalBranchExists(brainPath: string, branchName: string): void {
+  const branch = branchName.trim()
+  if (!branch) return
+  const existing = safeGit(brainPath, ['show-ref', '--verify', `refs/heads/${branch}`])
+  if (existing) return
+
+  const fromMain = tryGit(brainPath, ['branch', branch, 'main'])
+  if (fromMain.ok) return
+  void tryGit(brainPath, ['branch', branch])
+}
+
 function validateMergeTaskText(taskText: string): { ok: boolean; reason?: string } {
   const mergeMeta = parseMergeInstruction(taskText)
   if (!mergeMeta) return { ok: false, reason: 'missing_worktree_metadata' }
-  if (mergeMeta.targetBranch !== 'main') return { ok: false, reason: 'target_must_be_main' }
+  if (mergeMeta.sourceBranch === mergeMeta.targetBranch) return { ok: false, reason: 'source_target_same_branch' }
+  if (mergeMeta.targetBranch !== 'main' && !mergeMeta.targetBranch.startsWith('mission/')) {
+    return { ok: false, reason: 'target_must_be_main_or_mission_branch' }
+  }
   const feature = parseTaskMetadata(taskText, 'feature')
   const image = parseTaskMetadata(taskText, 'image')
   const breaking = parseTaskMetadata(taskText, 'breaking')
@@ -418,6 +528,13 @@ function parseWorktreeList(brainPath: string): WorktreeEntry[] {
     })
   }
   return out
+}
+
+function worktreePathForBranch(brainPath: string, branch: string): string | null {
+  for (const wt of parseWorktreeList(brainPath)) {
+    if (wt.branch === branch) return wt.path
+  }
+  return null
 }
 
 function activeRuntimeWorktreeRoot(): string {
@@ -572,13 +689,17 @@ function removeWorktreeByPath(brainPath: string, rawPath: string, force: boolean
   return { removed: true, message: `worktree_removed:${entry.path}` }
 }
 
-function collectMergeQueue(snapshot: Snapshot): Array<{ stepId: string; taskIndex: number; text: string }> {
+function collectMergeQueue(snapshot: Snapshot, targetBranch?: string): Array<{ stepId: string; taskIndex: number; text: string }> {
   const queue: Array<{ stepId: string; taskIndex: number; text: string }> = []
   for (const step of snapshot.executionSteps) {
     const tasks = step.tasks_json ?? []
     for (let i = 0; i < tasks.length; i++) {
       const task = tasks[i]
       if (!task.done && task.text.toUpperCase().startsWith('MERGE:')) {
+        if (targetBranch) {
+          const mergeMeta = parseMergeInstruction(task.text)
+          if (!mergeMeta || mergeMeta.targetBranch !== targetBranch) continue
+        }
         queue.push({ stepId: step.id, taskIndex: i, text: task.text })
       }
     }
@@ -663,17 +784,19 @@ function selectSuggestionStep(snapshot: Snapshot): ExecutionStep | null {
   )
 }
 
-function findSuggested(snapshot: Snapshot, brainPath: string): TeamSuggestion | null {
+function findSuggested(snapshot: Snapshot, brainPath: string, brainId: string): TeamSuggestion | null {
+  const activeInitiative = resolveActiveInitiativeContext(brainId, brainPath, snapshot)
+  const scopeByInitiative = activeInitiative && activeInitiative.scopedStepIds.size > 0
   const sourceSteps = snapshot.executionSteps.filter((s) => s.phase_number === 99)
   const candidateSets = sourceSteps.length > 0 ? [sourceSteps, snapshot.executionSteps] : [snapshot.executionSteps]
-  const normalizeTaskText = (value: string) =>
-    value
-      .replace(/^(NEXT|MERGE|VERIFY|NOTE|BLOCKER):\s*/i, '')
-      .trim()
-      .toLowerCase()
 
   for (const steps of candidateSets) {
-    for (const step of steps) {
+    const scoped = scopeByInitiative
+      ? steps.filter((step) => activeInitiative!.scopedStepIds.has(step.id))
+      : steps
+    if (scopeByInitiative && scoped.length === 0) continue
+
+    for (const step of scoped) {
       const tasks = step.tasks_json ?? []
       for (let i = 0; i < tasks.length; i++) {
         const task = tasks[i]
@@ -683,35 +806,16 @@ function findSuggested(snapshot: Snapshot, brainPath: string): TeamSuggestion | 
       }
     }
 
-    const handoffRecommendation = latestHandoffRecommendation(brainPath, snapshot)
-    if (handoffRecommendation) {
-      const normalizedRecommendation = normalizeTaskText(handoffRecommendation)
-      const isStaleRecommendation = steps.some((step) =>
-        (step.tasks_json ?? []).some((task) => normalizeTaskText(task.text) === normalizedRecommendation)
-      )
-      if (isStaleRecommendation) {
-        const unstarted = steps.find((s) => s.status === 'not_started')
-        if (unstarted) return { stepId: unstarted.id, label: unstarted.title }
-      } else {
-        const fallbackStepId =
-          steps.find((s) => s.status === 'in_progress')?.id ??
-          steps.find((s) => s.status === 'not_started')?.id ??
-          steps.find((s) => s.status !== 'completed')?.id ??
-          steps[0]?.id
-        if (fallbackStepId) return { stepId: fallbackStepId, label: handoffRecommendation }
-      }
-    }
-
-    const unstarted = steps.find((s) => s.status === 'not_started')
-    if (unstarted) return { stepId: unstarted.id, label: unstarted.title }
-    const inProgress = steps.find((s) => s.status === 'in_progress')
-    if (inProgress) return { stepId: inProgress.id, label: inProgress.title }
+    const pendingStep = scoped.find((step) => step.status === 'in_progress')
+      ?? scoped.find((step) => step.status === 'not_started')
+      ?? scoped.find((step) => step.status !== 'completed')
+    if (pendingStep) return { stepId: pendingStep.id, label: pendingStep.title }
   }
 
   return null
 }
 
-function ensureSyntheticNextTask(brainPath: string, snapshot: Snapshot): TeamSuggestion | null {
+function ensureSyntheticNextTask(brainPath: string, snapshot: Snapshot, brainId: string): TeamSuggestion | null {
   const targetStep = selectSuggestionStep(snapshot)
   if (!targetStep) return null
 
@@ -725,13 +829,13 @@ function ensureSyntheticNextTask(brainPath: string, snapshot: Snapshot): TeamSug
   const lane = targetStep.phase_number === 99 ? category : 'execution'
   const taskText = `NEXT: feature="${feature}" lane=${lane} worktree=feature/${branchSlug} image=pending breaking=none`
   mutateStepFile(brainPath, { stepId: targetStep.id, appendTaskText: taskText })
-  return findSuggested(snapshotForBrain(brainPath), brainPath)
+  return findSuggested(snapshotForBrain(brainPath), brainPath, brainId)
 }
 
 export function getSuggestedTask(brainId: string): TeamSuggestion | null {
   const brain = getBrain(brainId)
   if (!brain) throw new Error('Brain not found')
-  return findSuggested(snapshotForBrain(brain.path), brain.path)
+  return findSuggested(snapshotForBrain(brain.path), brain.path, brainId)
 }
 
 export function getBrainPathForId(brainId: string): string {
@@ -813,6 +917,29 @@ export function runTeamMcpCall(
     return { message: 'snapshot_loaded', snapshot: snapshotForBrain(brainPath) }
   }
 
+  if (method === 'team.get_live_demo_gate') {
+    return {
+      message: 'live_demo_gate_loaded',
+      snapshot: snapshotForBrain(brainPath),
+      liveDemoGate: readLiveDemoGateState(brainPath),
+    }
+  }
+
+  if (method === 'team.set_live_demo_gate') {
+    const ready = Boolean(params.ready)
+    const actor = typeof params.actor === 'string' && params.actor.trim() ? params.actor.trim() : 'human-operator'
+    const next = writeLiveDemoGateState(brainPath, {
+      ready,
+      acknowledgedAt: ready ? new Date().toISOString() : null,
+      actor: ready ? actor : null,
+    })
+    return {
+      message: `live_demo_gate_set:${ready ? 'ready' : 'waiting'}`,
+      snapshot: snapshotForBrain(brainPath),
+      liveDemoGate: next,
+    }
+  }
+
   if (method === 'team.get_repo_state') {
     return { message: 'repo_state_loaded', snapshot: snapshotForBrain(brainPath), repo: gitRepoState(brainPath) }
   }
@@ -850,7 +977,7 @@ export function runTeamMcpCall(
 
   if (method === 'team.get_suggested') {
     const snapshot = snapshotForBrain(brainPath)
-    const ensured = findSuggested(snapshot, brainPath) ?? ensureSyntheticNextTask(brainPath, snapshot)
+    const ensured = findSuggested(snapshot, brainPath, brainId)
     const suggested = ensured?.label ?? ''
     return { message: 'suggested_loaded', snapshot, suggested }
   }
@@ -898,6 +1025,14 @@ export function runTeamMcpCall(
   }
 
   if (method === 'team.record_human_verification') {
+    const gate = readLiveDemoGateState(brainPath)
+    if (!gate.ready) {
+      return {
+        message: 'verification_blocked:live_demo_gate_not_ready',
+        snapshot: snapshotForBrain(brainPath),
+        liveDemoGate: gate,
+      }
+    }
     const current = snapshotForBrain(brainPath)
     const fallbackStepId =
       current.executionSteps.find((s) => s.phase_number === 99)?.id ??
@@ -919,6 +1054,30 @@ export function runTeamMcpCall(
       mutateStepFile(brainPath, { stepId, taskIndex: verifyIdx, taskDone: true })
     }
     return { message: `human_verification_recorded:${stepId}`, snapshot: snapshotForBrain(brainPath) }
+  }
+
+  if (method === 'team.reject_human_verification') {
+    const current = snapshotForBrain(brainPath)
+    const fallbackStepId =
+      current.executionSteps.find((s) => s.phase_number === 99)?.id ??
+      current.executionSteps.find((s) => s.status === 'in_progress')?.id ??
+      current.executionSteps[0]?.id
+    const stepId = String(params.stepId ?? fallbackStepId ?? '')
+    if (!stepId) throw new Error('No step available for rejection')
+
+    const feature = String(params.feature ?? '').trim()
+    const reason = String(params.reason ?? '').trim() || 'human_rejected_without_reason'
+    const blockerText = feature
+      ? `BLOCKER: Human rejected feature "${feature}" at verification gate: ${reason}`
+      : `BLOCKER: Human rejected verification at gate: ${reason}`
+    mutateStepFile(brainPath, { stepId, appendTaskText: blockerText })
+    mutateStepFile(brainPath, { stepId, status: 'blocked' })
+    const nextGate = writeLiveDemoGateState(brainPath, { ready: false, acknowledgedAt: null, actor: null })
+    return {
+      message: `human_verification_rejected:${stepId}`,
+      snapshot: snapshotForBrain(brainPath),
+      liveDemoGate: nextGate,
+    }
   }
 
   if (method === 'team.merge_item') {
@@ -1110,7 +1269,8 @@ export function runTeamMcpCall(
 
   if (method === 'team.merge_queue_dry_run') {
     const current = snapshotForBrain(brainPath)
-    const queue = collectMergeQueue(current)
+    const initiativeContext = resolveActiveInitiativeContext(brainId, brainPath, current)
+    const queue = collectMergeQueue(current, initiativeContext?.missionBranch)
     const ordered = authoritativelyOrderMergeQueue(brainPath, current, queue)
     const details = ordered.details
     const blockedAt = details.find((d) => d.status === 'blocked')?.item
@@ -1130,7 +1290,8 @@ export function runTeamMcpCall(
 
   if (method === 'team.merge_queue_execute') {
     const initial = snapshotForBrain(brainPath)
-    const queue = collectMergeQueue(initial)
+    const initiativeContext = resolveActiveInitiativeContext(brainId, brainPath, initial)
+    const queue = collectMergeQueue(initial, initiativeContext?.missionBranch)
     const ordered = authoritativelyOrderMergeQueue(brainPath, initial, queue)
     const blockedAtPrecheck = ordered.details.find((d) => d.status === 'blocked')
     if (blockedAtPrecheck) {
@@ -1191,18 +1352,22 @@ export function runTeamMcpCall(
   }
 
   if (method === 'team.merge_queue_ship') {
-    const preRepo = gitRepoState(brainPath)
-    if (preRepo.branch !== 'main') {
+    const current = snapshotForBrain(brainPath)
+    const initiativeContext = resolveActiveInitiativeContext(brainId, brainPath, current)
+    if (!initiativeContext) {
       return {
-        message: `ship_blocked:not_on_main:${preRepo.branch}`,
-        snapshot: snapshotForBrain(brainPath),
-        repo: preRepo,
+        message: 'ship_blocked:no_active_initiative',
+        snapshot: current,
+        repo: gitRepoState(brainPath),
       }
     }
+    ensureLocalBranchExists(brainPath, initiativeContext.missionBranch)
+
+    const preRepo = gitRepoState(brainPath)
     if (preRepo.hardBlockers.length > 0) {
       return {
         message: `ship_blocked:hard_blockers:${preRepo.hardBlockers.length}`,
-        snapshot: snapshotForBrain(brainPath),
+        snapshot: current,
         repo: preRepo,
       }
     }
@@ -1230,8 +1395,48 @@ export function runTeamMcpCall(
       }
     }
 
-    const push = tryGit(brainPath, ['push', 'origin', 'main'])
+    const shipPath = worktreePathForBranch(brainPath, 'main') ?? (preRepo.branch === 'main' ? brainPath : null)
+    if (!shipPath) {
+      return {
+        message: 'ship_blocked:main_worktree_not_found',
+        snapshot: merged.snapshot,
+        repo: gitRepoState(brainPath),
+        mergeQueue: merged.mergeQueue,
+      }
+    }
+    const stashed = stashIfDirty(shipPath, `team-ship-${initiativeContext.id}-${Date.now()}`)
+    if (stashed.error) {
+      return {
+        message: 'ship_blocked:dirty_worktree_stash_failed',
+        snapshot: merged.snapshot,
+        repo: gitRepoState(brainPath),
+        mergeQueue: merged.mergeQueue,
+        conflictSummary: stashed.error,
+      }
+    }
+
+    const mergeMissionToMain = tryGit(shipPath, [
+      'merge',
+      '--no-ff',
+      initiativeContext.missionBranch,
+      '-m',
+      `merge: ${initiativeContext.missionBranch} -> main (initiative ${initiativeContext.id})`,
+    ])
+    if (!mergeMissionToMain.ok) {
+      void tryGit(shipPath, ['merge', '--abort'])
+      if (stashed.didStash && stashed.stashRef) void restoreStash(shipPath, stashed.stashRef)
+      return {
+        message: 'ship_blocked:mission_to_main_merge_failed',
+        snapshot: merged.snapshot,
+        repo: gitRepoState(brainPath),
+        mergeQueue: merged.mergeQueue,
+        conflictSummary: mergeMissionToMain.error,
+      }
+    }
+
+    const push = tryGit(shipPath, ['push', 'origin', 'main'])
     if (!push.ok) {
+      if (stashed.didStash && stashed.stashRef) void restoreStash(shipPath, stashed.stashRef)
       return {
         message: 'ship_blocked:push_failed',
         snapshot: merged.snapshot,
@@ -1248,10 +1453,22 @@ export function runTeamMcpCall(
         },
       }
     }
+    const shippedHead = safeGit(shipPath, ['rev-parse', 'HEAD'])
+    if (stashed.didStash && stashed.stashRef) {
+      const restored = restoreStash(shipPath, stashed.stashRef)
+      if (!restored.ok) {
+        return {
+          message: 'ship_blocked:stash_restore_failed',
+          snapshot: merged.snapshot,
+          repo: gitRepoState(brainPath),
+          mergeQueue: merged.mergeQueue,
+          conflictSummary: restored.error,
+        }
+      }
+    }
 
-    const head = safeGit(brainPath, ['rev-parse', 'HEAD'])
     return {
-      message: `ship_completed:${head || 'unknown_sha'}`,
+      message: `ship_completed:${shippedHead || 'unknown_sha'}`,
       snapshot: merged.snapshot,
       repo: gitRepoState(brainPath),
       mergeQueue: merged.mergeQueue,
@@ -1259,7 +1476,7 @@ export function runTeamMcpCall(
         pushed: true,
         remote: 'origin',
         branch: 'main',
-        commitShas: head ? [head] : [],
+        commitShas: shippedHead ? [shippedHead] : [],
         message: 'Merged queue and pushed to origin/main',
         at: new Date().toISOString(),
       },
@@ -1268,16 +1485,13 @@ export function runTeamMcpCall(
 
   if (method === 'team.trigger_suggested') {
     const current = snapshotForBrain(brainPath)
-    let suggestion = findSuggested(current, brainPath) ?? ensureSyntheticNextTask(brainPath, current)
+    let suggestion = findSuggested(current, brainPath, brainId)
     if (!suggestion) {
       return { message: 'no_suggestion_available', snapshot: current }
     }
-    if (typeof suggestion.taskIndex !== 'number') {
-      const synthetic = ensureSyntheticNextTask(brainPath, snapshotForBrain(brainPath))
-      if (synthetic) suggestion = synthetic
-    }
 
     const latest = snapshotForBrain(brainPath)
+    const initiativeContext = resolveActiveInitiativeContext(brainId, brainPath, latest)
     const target = latest.executionSteps.find((s) => s.id === suggestion.stepId)
     if (target?.status === 'not_started') {
       mutateStepFile(brainPath, { stepId: suggestion.stepId, status: 'in_progress' })
@@ -1289,11 +1503,32 @@ export function runTeamMcpCall(
     if (typeof suggestion.taskIndex === 'number') {
       mutateStepFile(brainPath, { stepId: suggestion.stepId, taskIndex: suggestion.taskIndex, taskDone: true })
     }
-    const queueBranch = parseTaskMetadata(sourceTaskText, 'branch') ?? parseTaskMetadata(sourceTaskText, 'worktree')
+    const feature = parseTaskMetadata(sourceTaskText, 'feature') ?? suggestion.label
+    const image = parseTaskMetadata(sourceTaskText, 'image') ?? 'pending'
+    const breaking = parseTaskMetadata(sourceTaskText, 'breaking') ?? 'none'
+    let queueBranch = parseTaskMetadata(sourceTaskText, 'branch') ?? parseTaskMetadata(sourceTaskText, 'worktree')
+    if (!queueBranch) {
+      const derivedBranchSlug = slugify(`${initiativeContext?.id ?? 'mission'}-${feature}`) || `task-${Date.now().toString(36)}`
+      queueBranch = `feature/${derivedBranchSlug}`
+      mutateStepFile(
+        brainPath,
+        {
+          stepId: suggestion.stepId,
+          appendTaskText: `NEXT: feature="${feature}" lane=execution worktree=${queueBranch} image=${image} breaking=${breaking}${initiativeContext ? ` initiative_id=${initiativeContext.id}` : ''}`,
+        }
+      )
+      const refreshed = snapshotForBrain(brainPath).executionSteps.find((s) => s.id === suggestion.stepId)
+      const syntheticNextIndex = (refreshed?.tasks_json ?? []).findIndex(
+        (task) => !task.done && task.text.toUpperCase().startsWith('NEXT:') && (parseTaskMetadata(task.text, 'worktree') ?? parseTaskMetadata(task.text, 'branch')) === queueBranch
+      )
+      if (syntheticNextIndex >= 0) {
+        mutateStepFile(brainPath, { stepId: suggestion.stepId, taskIndex: syntheticNextIndex, taskDone: true })
+      }
+    }
     if (queueBranch) {
-      const feature = parseTaskMetadata(sourceTaskText, 'feature') ?? suggestion.label
-      const image = parseTaskMetadata(sourceTaskText, 'image') ?? 'pending'
-      const breaking = parseTaskMetadata(sourceTaskText, 'breaking') ?? 'none'
+      ensureLocalBranchExists(brainPath, queueBranch)
+      const mergeTargetBranch = initiativeContext?.missionBranch ?? 'main'
+      ensureLocalBranchExists(brainPath, mergeTargetBranch)
       const afterToggle = snapshotForBrain(brainPath)
       const stepAfterToggle = afterToggle.executionSteps.find((s) => s.id === suggestion.stepId)
       const hasMergeTask = (stepAfterToggle?.tasks_json ?? []).some(
@@ -1307,7 +1542,7 @@ export function runTeamMcpCall(
           brainPath,
           {
             stepId: suggestion.stepId,
-            appendTaskText: `MERGE: feature="${feature}" branch=${queueBranch} -> main image=${image} breaking=${breaking}`,
+            appendTaskText: `MERGE: feature="${feature}" branch=${queueBranch} -> ${mergeTargetBranch} image=${image} breaking=${breaking}${initiativeContext ? ` initiative_id=${initiativeContext.id}` : ''}`,
           }
         )
       }

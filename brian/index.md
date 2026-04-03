@@ -19,7 +19,7 @@ Brian is a delegated company OS for software delivery. Decisions are made at the
 - `Directors`: director decision inbox
 - `Tribe`: tribe decision inbox
 - `Product Owner View`: squad decision inbox (queries up chain when needed)
-- `Mission Control`: squad execution, verification, merge gate
+- `Mission Control`: squad execution, live demo gate, verification, merge gate
 - `Graph + Notes`: evidence graph + source notes
 - `Agents + Workflow`: edit personas, rules, and skills
 

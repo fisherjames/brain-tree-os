@@ -33,5 +33,12 @@
 
 ## UI Surfaces
 - CEO Mission: director-level decisions, escalations, initiative pipeline, record explorer.
-- Mission Control: squad-level queue, blockers, verification gate, worktree merges.
+- Mission Control: squad-level queue, live demo gate, blockers, verification gate, worktree merges.
 - Tribe tab: triage escalations and shape initiatives through early lifecycle stages.
+
+## Mission Branch Contract
+- Initiative IDs are generated from initiative titles (descriptive slug form, uniqueness suffix when needed).
+- Each initiative appends a high-level execution-plan step with `INITIATIVE: initiative_id=<id> mission_branch=mission/<id>`.
+- Mission Control suggestions are initiative-scoped: next `NEXT:` task first, otherwise next incomplete step from the active initiative.
+- Each triggered task produces/uses one child worktree branch and appends a `MERGE:` task targeting the initiative mission branch.
+- `Ship to Main` runs dry-run + queue execute on mission branch first, then merges `mission/<initiative-id>` into `main` and pushes.

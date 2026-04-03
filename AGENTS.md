@@ -23,16 +23,20 @@ Brian is a delegated company operating system in markdown.
 
 ## Mission Contract
 - `brian mission <initiative-id> --squad <name>` runs real implementation work inside workflow guardrails.
+- Mission creates one initiative branch `mission/<initiative-id>` and uses child worktree branches per task.
 - Mission keeps worktree-mapped `NEXT` + `MERGE` queue entries as the canonical UI control surface for delivery.
+- Suggested next work is the next incomplete step inside the active initiative scope.
+- Live demo flow starts at **I'm Ready**, then human verification is explicit **Approve/Reject** after task start.
 - Merge remains gated by human verification and conflict checks.
-- Final release action is Mission Control **Ship to Main** (merge queue + push to `origin/main` when all gates pass).
+- Dry-run merge must pass before human verification can be recorded and before Ship is enabled.
+- Final release action is Mission Control **Ship to Main**: merge child worktrees into `mission/<initiative-id>`, merge mission branch into `main`, then push to `origin/main`.
 
 ## Product Surfaces
 - CEO View: final escalations, strategic blockers, briefings.
 - Director View: director-level decisions.
 - Tribe View: tribe-level decisions.
 - Product Owner View: squad-context decisions.
-- Mission Control: execution, verification, merge queue.
+- Mission Control: execution, live demo readiness gate, verification, merge queue.
 - Agents + Workflow: squad definitions, personas, codex skills, codex rules.
 
 ## Delivery Hygiene

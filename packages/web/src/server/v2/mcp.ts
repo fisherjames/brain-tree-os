@@ -370,13 +370,58 @@ function upsertInitiative(
   brainPath: string,
   payload: { id?: string; title: string; stage: V2Stage; summary?: string; actor?: string; note?: string }
 ) {
-  const id = payload.id || nextId('initiative')
+  const toSlug = (value: string): string =>
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 48)
+  const ensureInitiativeId = (title: string): string => {
+    const base = `initiative-${toSlug(title) || 'untitled'}`
+    let candidate = base
+    let counter = 2
+    while (fs.existsSync(path.join(brainPath, 'brian', 'initiatives', `${candidate}.md`))) {
+      candidate = `${base}-${counter}`
+      counter += 1
+    }
+    return candidate
+  }
+  const ensureExecutionPlanStepForInitiative = (initiativeId: string, title: string, missionBranch: string) => {
+    const planPath = path.join(brainPath, 'brian', 'execution-plan.md')
+    if (!fs.existsSync(planPath)) return
+    const raw = fs.readFileSync(planPath, 'utf8')
+    if (new RegExp(`initiative_id\\s*=\\s*${initiativeId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(raw)) return
+
+    const lines = raw.split('\n')
+    let maxEp = 0
+    for (const line of lines) {
+      const match = line.match(/^###\s+EP-(\d+)\s+/i)
+      if (match) maxEp = Math.max(maxEp, Number(match[1] || 0))
+    }
+    const nextEp = Math.max(1, maxEp + 1)
+    const hasInitiativePhase = lines.some((line) => /^##\s+Phase\s+\d+\s+-\s+Initiative Missions/i.test(line.trim()))
+    const block = [
+      `### EP-${nextEp} ${title}`,
+      '- **Status**: not_started',
+      `- **Goal**: Deliver initiative "${title}" through Mission Control.`,
+      `- [ ] INITIATIVE: initiative_id=${initiativeId} mission_branch=${missionBranch}`,
+      '',
+    ].join('\n')
+
+    const next = hasInitiativePhase
+      ? `${raw.trimEnd()}\n\n${block}`.replace(/\n{3,}/g, '\n\n')
+      : `${raw.trimEnd()}\n\n## Phase 9 - Initiative Missions\n\n${block}`.replace(/\n{3,}/g, '\n\n')
+    fs.writeFileSync(planPath, `${next.trimEnd()}\n`, 'utf8')
+  }
+
+  const id = payload.id || ensureInitiativeId(payload.title)
   const rel = path.join('brian', 'initiatives', `${id}.md`)
   const fullPath = path.join(brainPath, rel)
   const existingFm = fs.existsSync(fullPath) ? parseFrontmatter(fs.readFileSync(fullPath, 'utf8')) : {}
   const createdAt = existingFm.created_at || new Date().toISOString()
   const actor = payload.actor || 'project-operator'
   const note = payload.note || payload.summary || ''
+  const missionBranch = String(existingFm.mission_branch || `mission/${id}`).trim()
   if (fs.existsSync(fullPath)) {
     writeRecordMarkdown(
       brainPath,
@@ -386,6 +431,7 @@ function upsertInitiative(
         title: payload.title,
         stage: payload.stage,
         summary: payload.summary ?? '',
+        mission_branch: missionBranch,
         created_at: createdAt,
         updated_at: new Date().toISOString(),
       },
@@ -402,6 +448,7 @@ function upsertInitiative(
       title: payload.title,
       stage: payload.stage,
       summary: payload.summary ?? '',
+      mission_branch: missionBranch,
       created_at: createdAt,
       updated_at: new Date().toISOString(),
     },
@@ -423,6 +470,7 @@ function upsertInitiative(
       `- ${new Date().toISOString()} · ${actor} · stage=${payload.stage} · ${note || 'created'}`,
     ].join('\n')
   )
+  ensureExecutionPlanStepForInitiative(id, payload.title, missionBranch)
   return id
 }
 

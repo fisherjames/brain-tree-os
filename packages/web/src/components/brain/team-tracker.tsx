@@ -74,6 +74,11 @@ type SnapshotResult = {
     message: string
     at: string
   }
+  liveDemoGate?: {
+    ready: boolean
+    acknowledgedAt: string | null
+    actor: string | null
+  }
   observer?: {
     active: boolean
     ticks: number
@@ -140,6 +145,13 @@ export default function TeamTracker({
   const [mergePreviewText, setMergePreviewText] = useState('')
   const [mergeQueueText, setMergeQueueText] = useState('')
   const [shipSummaryText, setShipSummaryText] = useState('')
+  const [dryRunBlocked, setDryRunBlocked] = useState(false)
+  const [dryRunReason, setDryRunReason] = useState('')
+  const [liveDemoGate, setLiveDemoGate] = useState<{ ready: boolean; acknowledgedAt: string | null; actor: string | null }>({
+    ready: false,
+    acknowledgedAt: null,
+    actor: null,
+  })
   const [actionError, setActionError] = useState<string | null>(null)
   const [hasSeenConnected, setHasSeenConnected] = useState(false)
   const [connectionGraceExpired, setConnectionGraceExpired] = useState(false)
@@ -160,12 +172,14 @@ export default function TeamTracker({
 
   useEffect(() => {
     const refreshRuntimeState = async () => {
-      const [snapshotRes, runRes, repoRes, suggestionRes, squadsRes] = await Promise.all([
+      const [snapshotRes, runRes, repoRes, suggestionRes, squadsRes, dryRunRes, gateRes] = await Promise.all([
         call<{ snapshot: SnapshotResult['snapshot'] }>('team.get_snapshot'),
         call<{ run: SnapshotResult['run']; active: boolean; observer?: SnapshotResult['observer'] }>('team.get_run_state'),
         call<{ repo: RepoState }>('team.get_repo_state'),
         call<{ suggested: string }>('team.get_suggested'),
         call<{ squads: Array<{ id: string; name: string; memberAgentIds: string[] }>; activeSquadId: string; agentCatalog: Array<{ id: string; label: string }> }>('team.get_squads'),
+        call<SnapshotResult>('team.merge_queue_dry_run'),
+        call<{ liveDemoGate: { ready: boolean; acknowledgedAt: string | null; actor: string | null } }>('team.get_live_demo_gate'),
       ])
       if (snapshotRes.ok && snapshotRes.result?.snapshot) {
         setSteps(snapshotRes.result.snapshot.executionSteps)
@@ -185,6 +199,17 @@ export default function TeamTracker({
       } else {
         setSquads([fallbackSquad])
         setActiveSquadId(fallbackSquad.id)
+      }
+      if (dryRunRes.ok && dryRunRes.result?.mergeQueue) {
+        const blocked = dryRunRes.result.mergeQueue.details.find((item) => item.status === 'blocked')
+        setDryRunBlocked(Boolean(blocked))
+        setDryRunReason(blocked ? `${blocked.item}${blocked.reason ? ` (${blocked.reason})` : ''}` : '')
+      } else {
+        setDryRunBlocked(false)
+        setDryRunReason('')
+      }
+      if (gateRes.ok && gateRes.result?.liveDemoGate) {
+        setLiveDemoGate(gateRes.result.liveDemoGate)
       }
       setLastUpdateAt(new Date().toISOString())
     }
@@ -258,6 +283,14 @@ export default function TeamTracker({
   }, [pendingVerificationOptions])
 
   const needsVerification = mergeItems.some((item) => !item.done && !verifiedStepIds.has(item.stepId))
+  const verificationAllowedDuringDryRun = useMemo(
+    () => !dryRunBlocked || /\bverification_required\b/i.test(dryRunReason),
+    [dryRunBlocked, dryRunReason]
+  )
+  const showVerificationDecision = useMemo(
+    () => liveDemoGate.ready && (pendingVerificationOptions.length > 0 || runActive || Boolean(runState)),
+    [liveDemoGate.ready, pendingVerificationOptions.length, runActive, runState]
+  )
   const hardBlockers = useMemo(() => {
     const items: Array<{ message: string; resolution: string }> = []
     const shouldShowOffline = !connected && (hasSeenConnected || connectionGraceExpired)
@@ -270,8 +303,11 @@ export default function TeamTracker({
     if (runActive && (runState?.status === 'blocked' || runState?.status === 'failed')) {
       items.push({ message: `Run blocked: ${runState.blockerReason || runState.status}`, resolution: 'Resolve blocker or pause/cleanup before restarting.' })
     }
+    if (dryRunBlocked && !/\bverification_required\b/i.test(dryRunReason)) {
+      items.push({ message: `Dry run blocked: ${dryRunReason || 'queue has blocked merge items'}`, resolution: 'Fix merge metadata/conflicts before verification or ship.' })
+    }
     return items
-  }, [connected, connectionGraceExpired, hasSeenConnected, repoState?.hardBlockers, runActive, runState?.blockerReason, runState?.status])
+  }, [connected, connectionGraceExpired, dryRunBlocked, dryRunReason, hasSeenConnected, repoState?.hardBlockers, runActive, runState?.blockerReason, runState?.status])
 
   const systemStatus = useMemo((): 'working' | 'awaiting_approval' | 'blocked' | 'idle' => {
     if (hardBlockers.length > 0) return 'blocked'
@@ -352,6 +388,9 @@ export default function TeamTracker({
         ]
         setShipSummaryText(lines.join('\n'))
       }
+      if (res.ok && res.result?.liveDemoGate) {
+        setLiveDemoGate(res.result.liveDemoGate)
+      }
       if (res.ok && typeof res.result?.suggested === 'string') {
         setServerSuggested(res.result.suggested)
       }
@@ -385,6 +424,21 @@ export default function TeamTracker({
     return inStep[targetPos].taskIndex
   }
 
+  async function rejectVerificationDecision() {
+    const reason = window.prompt('Why are you rejecting this verification?', '')
+    if (reason === null) return
+    const trimmed = reason.trim()
+    if (!trimmed) {
+      setActionError('Rejection reason is required.')
+      return
+    }
+    await apply(
+      'team.reject_human_verification',
+      { stepId: selectedVerificationStepId, feature: selectedFeature || suggested, reason: trimmed },
+      'verify-reject'
+    )
+  }
+
   return (
     <div className="h-full overflow-y-auto p-4">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-3">
@@ -396,6 +450,34 @@ export default function TeamTracker({
           </div>
           <p className="mt-1 text-[12px] text-text-muted">Squad execution command center: run work, verify outcomes, merge verified worktrees.</p>
           <p className="mt-1 text-[12px] text-text-muted">Next action: {suggested}</p>
+          <div className={`mt-2 rounded-md border p-2 ${liveDemoGate.ready ? 'border-[#5B9A65]/40 bg-[#5B9A65]/10' : 'border-[#E8A830]/40 bg-[#E8A830]/10'}`}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-[11px] font-medium text-text-secondary">Live Demo Gate</p>
+                <p className="text-[12px] text-text-muted">
+                  {liveDemoGate.ready
+                    ? `Ready${liveDemoGate.actor ? ` by ${liveDemoGate.actor}` : ''}${liveDemoGate.acknowledgedAt ? ` at ${new Date(liveDemoGate.acknowledgedAt).toLocaleTimeString('en-GB', { hour12: false })}` : ''}`
+                    : 'Waiting for manual operator ready click.'}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => apply('team.set_live_demo_gate', { ready: true, actor: 'human-operator' }, 'demo-ready')}
+                  disabled={busy === 'demo-ready' || liveDemoGate.ready || !connected}
+                  className="rounded-md border border-border bg-bg px-2.5 py-1.5 text-[12px] text-text-secondary hover:bg-text/5 disabled:opacity-50"
+                >
+                  I'm Ready
+                </button>
+                <button
+                  onClick={() => apply('team.set_live_demo_gate', { ready: false }, 'demo-reset')}
+                  disabled={busy === 'demo-reset' || !liveDemoGate.ready || !connected}
+                  className="rounded-md border border-border bg-bg px-2.5 py-1.5 text-[12px] text-text-secondary hover:bg-text/5 disabled:opacity-50"
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+          </div>
           <div className="mt-2 rounded-md border border-border/70 bg-bg p-2">
             <p className="text-[11px] font-medium text-text-secondary">Squad</p>
             <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -447,7 +529,7 @@ export default function TeamTracker({
           <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
             <button
               onClick={() => apply('team.start_next_task', { squadId: activeSquadId }, 'start')}
-              disabled={busy === 'start' || hardBlockers.length > 0 || !hasRunnableSuggestion || !connected}
+              disabled={busy === 'start' || hardBlockers.length > 0 || !hasRunnableSuggestion || !connected || !liveDemoGate.ready}
               className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md border border-border bg-bg px-3 py-2 text-[12px] text-text-secondary hover:bg-text/5 disabled:opacity-50"
             >
               <Play className="h-3.5 w-3.5" />
@@ -455,11 +537,11 @@ export default function TeamTracker({
             </button>
             <button
               onClick={() => apply('team.pause_run', {}, 'pause')}
-              disabled={busy === 'pause' || runState?.status !== 'running' || !connected}
+              disabled={busy === 'pause' || !runActive || !connected}
               className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md border border-border bg-bg px-3 py-2 text-[12px] text-text-secondary hover:bg-text/5 disabled:opacity-50"
             >
               <Pause className="h-3.5 w-3.5" />
-              Pause
+              Stop Run
             </button>
             <button
               onClick={() => apply('team.get_conflict_summary', {}, 'conflicts')}
@@ -477,7 +559,7 @@ export default function TeamTracker({
             </button>
             <button
               onClick={() => apply('team.merge_queue_ship', {}, 'merge-queue-ship')}
-              disabled={busy === 'merge-queue-ship' || !connected || needsVerification || Boolean(repoState?.hasConflicts)}
+                disabled={busy === 'merge-queue-ship' || !connected || needsVerification || dryRunBlocked || Boolean(repoState?.hasConflicts)}
               className="min-h-9 rounded-md border border-border bg-bg px-3 py-2 text-[12px] text-text-secondary hover:bg-text/5 disabled:opacity-50"
             >
               Ship to Main
@@ -543,11 +625,20 @@ export default function TeamTracker({
                 onClick={() =>
                   apply('team.record_human_verification', { stepId: selectedVerificationStepId, feature: selectedFeature || suggested }, 'verify')
                 }
-                disabled={busy === 'verify' || pendingVerificationOptions.length === 0}
+                disabled={busy === 'verify' || pendingVerificationOptions.length === 0 || !verificationAllowedDuringDryRun}
                 className="rounded-md border border-border bg-bg px-2.5 py-1.5 text-[12px] text-text-secondary hover:bg-text/5 disabled:opacity-50"
               >
-                Record Verification
+                {showVerificationDecision ? 'Approve' : 'Record Verification'}
               </button>
+              {showVerificationDecision && (
+                <button
+                  onClick={() => void rejectVerificationDecision()}
+                  disabled={busy === 'verify-reject' || pendingVerificationOptions.length === 0}
+                  className="rounded-md border border-[#D95B5B]/40 bg-[#D95B5B]/10 px-2.5 py-1.5 text-[12px] text-[#D95B5B] hover:bg-[#D95B5B]/20 disabled:opacity-50"
+                >
+                  Reject
+                </button>
+              )}
             </div>
           </div>
 

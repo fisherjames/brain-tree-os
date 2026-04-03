@@ -191,7 +191,8 @@ function discussionActor(agentId: string): string {
 
 function classifyStage(line: string): 'planning' | 'coding' | 'verification' | 'blocker' | 'system' {
   const lower = line.toLowerCase()
-  if (lower.includes('error') || lower.includes('failed') || lower.includes('conflict')) return 'blocker'
+  if (/\b(error|failed|fatal|exception)\b/i.test(line)) return 'blocker'
+  if (/\bmerge conflicts?\b/i.test(line)) return 'blocker'
   if (lower.includes('implement') || lower.includes('edit') || lower.includes('patch') || lower.includes('diff')) return 'coding'
   if (lower.includes('test') || lower.includes('verify') || lower.includes('validation')) return 'verification'
   if (lower.includes('plan') || lower.includes('todo')) return 'planning'
@@ -300,6 +301,7 @@ function startCodexRunForSuggestion(
     `Start focused implementation work for this task: ${label}.`,
     squadContext,
     'Read brian/index.md, AGENTS.md, brian/execution-plan.md, and latest handoff first.',
+    'Do not rewrite brian/execution-plan.md unless the task explicitly requests plan maintenance.',
     'Make real code and note updates, verify, and print compact progress checkpoints.',
   ].join(' ')
 
@@ -445,6 +447,20 @@ app.prepare().then(() => {
 
           try {
             if (method === 'team.start_next_task') {
+              const gateState = runTeamMcpCall(brainId, 'team.get_live_demo_gate', {})
+              if (!gateState.liveDemoGate?.ready) {
+                const blocked = {
+                  ...gateState,
+                  message: 'start_blocked:live_demo_gate_not_ready',
+                }
+                if (ws.readyState === WebSocket.OPEN) {
+                  ws.send(JSON.stringify({ type: 'mcp.result', id: callId, ok: true, result: blocked }))
+                  ws.send(JSON.stringify({ type: 'execution_steps', data: blocked.snapshot.executionSteps }))
+                  ws.send(JSON.stringify({ type: 'handoffs', data: blocked.snapshot.handoffs }))
+                }
+                broadcastTeamEvent(wss, brainId, blocked.message, { actor: 'mission-control', stage: 'blocker', kind: 'blocker' })
+                return
+              }
               const requestedSquadId = typeof params.squadId === 'string' ? params.squadId.trim() : ''
               if (requestedSquadId) {
                 runTeamMcpCall(brainId, 'team.set_active_squad', { squadId: requestedSquadId })

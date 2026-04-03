@@ -37,11 +37,12 @@ Brian runs work through an explicit organizational ladder. Decisions are resolve
 - `Directors`: director decision inbox
 - `Tribe`: tribe decision inbox
 - `Product Owner View`: squad-context decision inbox
-- `Mission Control`: squad execution, verification, merge gates
+- `Mission Control`: squad execution, live demo gate, verification, merge gates
 - `Graph + Notes`: evidence graph and note navigation
 - `Agents + Workflow`: editable personas, workflow rules, and skills
 
 Every Mission Control action is backed by a real MCP call so the same workflow surface can be consumed by both UI operators and future executive-agent automation.
+Live demos should use the in-app Mission Control **Live Demo Gate** readiness click (not ad-hoc browser alerts).
 
 ## Storage Model
 - Repo memory: `brian/`
@@ -94,4 +95,4 @@ brian merge
 brian brief
 ```
 
-Final shipping action is in Mission Control: **Ship to Main** (queue dry-run, merge, then push to `origin/main` behind verification/conflict gates).
+Final shipping action is in Mission Control: **Ship to Main** (queue dry-run, merge child worktrees into `mission/<initiative-id>`, merge mission branch to `main`, then push to `origin/main` behind verification/conflict gates).
