@@ -1,0 +1,11 @@
+services:
+  memu:
+    image: nevamind/memu-server:latest
+    ports:
+      - '8000:8000'
+    volumes:
+      - ./brian:/data/brain
+    environment:
+      - MEMU_WATCH_DIR=/data/brain
+      - MEMU_AUTO_MEMORIZE=true
+    restart: unless-stopped
