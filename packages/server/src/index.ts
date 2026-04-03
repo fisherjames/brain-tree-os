@@ -42,6 +42,11 @@ const ALL_MCP_METHODS = [
   'team.create_mission_branch',
   'team.record_human_verification',
   'team.capture_failure_bundle',
+  'team.upsert_squad',
+  'team.set_active_squad',
+  'team.remove_squad',
+  'config.get_skills',
+  'config.get_rules',
 ]
 
 initializeDefaultMethods(ALL_MCP_METHODS)

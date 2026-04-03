@@ -15,6 +15,7 @@ import { brief } from './brief.js'
 import { decide } from './decide.js'
 import { mission } from './mission.js'
 import { codex } from './codex.js'
+import { doctrineLint } from './doctrine-lint.js'
 
 export interface Command {
   description: string
@@ -39,4 +40,5 @@ export const commands: Record<string, Command> = {
   decide,
   mission,
   codex,
+  'doctrine-lint': doctrineLint,
 }

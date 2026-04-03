@@ -110,22 +110,93 @@ function SquadsSection({ squads, loading }: { squads: SquadConfig[]; loading: bo
   )
 }
 
-function SkillsSection({ brainId: _brainId }: { brainId: string }) {
+interface SkillEntry {
+  name: string
+  path: string
+  description: string
+}
+
+interface RuleEntry {
+  name: string
+  path: string
+  content: string
+}
+
+function SkillsSection({ brainId }: { brainId: string }) {
+  const { call, connected } = useMcp()
+  const [skills, setSkills] = useState<SkillEntry[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!connected) return
+    call<{ skills: SkillEntry[] }>('config.get_skills', {}, brainId)
+      .then((r) => setSkills(r.skills ?? []))
+      .catch(() => setSkills([]))
+      .finally(() => setLoading(false))
+  }, [connected, call, brainId])
+
+  if (loading) return <p className="text-sm text-zinc-500">Scanning skills...</p>
+
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-6">
-      <h3 className="mb-3 text-sm font-semibold text-zinc-300">Configured Skills</h3>
-      <p className="text-sm text-zinc-500">
-        Skills are loaded from ~/.codex/skills/ and .cursor/skills/
-      </p>
+    <div className="space-y-3">
+      <h3 className="text-sm font-semibold text-zinc-300">
+        Configured Skills ({skills.length})
+      </h3>
+      {skills.length === 0 ? (
+        <p className="text-sm text-zinc-500">
+          No skills found. Add skills to ~/.codex/skills/ or .cursor/skills/
+        </p>
+      ) : (
+        skills.map((skill) => (
+          <div key={skill.path} className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+            <div className="mb-1 flex items-center gap-2">
+              <Wrench className="h-4 w-4 text-blue-400" />
+              <span className="font-medium text-zinc-200">{skill.name}</span>
+            </div>
+            <p className="text-sm text-zinc-400">{skill.description}</p>
+            <p className="mt-1 truncate font-mono text-xs text-zinc-600">{skill.path}</p>
+          </div>
+        ))
+      )}
     </div>
   )
 }
 
-function RulesSection({ brainId: _brainId }: { brainId: string }) {
+function RulesSection({ brainId }: { brainId: string }) {
+  const { call, connected } = useMcp()
+  const [rules, setRules] = useState<RuleEntry[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!connected) return
+    call<{ rules: RuleEntry[] }>('config.get_rules', {}, brainId)
+      .then((r) => setRules(r.rules ?? []))
+      .catch(() => setRules([]))
+      .finally(() => setLoading(false))
+  }, [connected, call, brainId])
+
+  if (loading) return <p className="text-sm text-zinc-500">Scanning rules...</p>
+
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-6">
-      <h3 className="mb-3 text-sm font-semibold text-zinc-300">Active Rules</h3>
-      <p className="text-sm text-zinc-500">Rules are loaded from .cursor/rules/ and AGENTS.md</p>
+    <div className="space-y-3">
+      <h3 className="text-sm font-semibold text-zinc-300">Active Rules ({rules.length})</h3>
+      {rules.length === 0 ? (
+        <p className="text-sm text-zinc-500">
+          No rules found. Add rules to .cursor/rules/ or AGENTS.md
+        </p>
+      ) : (
+        rules.map((rule) => (
+          <div key={rule.path} className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+            <div className="mb-1 flex items-center gap-2">
+              <BookOpen className="h-4 w-4 text-amber-400" />
+              <span className="font-medium text-zinc-200">{rule.name}</span>
+            </div>
+            <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap font-mono text-xs text-zinc-500">
+              {rule.content}
+            </pre>
+          </div>
+        ))
+      )}
     </div>
   )
 }
