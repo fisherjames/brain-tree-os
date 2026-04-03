@@ -2208,7 +2208,7 @@ function runDoctrineLint(brainRoot: string): { ok: boolean; issues: string[] } {
   const agentsContent = fs.existsSync(agentsPath) ? fs.readFileSync(agentsPath, 'utf8') : ''
   const constitutionContent = fs.existsSync(constitutionPath) ? fs.readFileSync(constitutionPath, 'utf8') : ''
 
-  if (!agentsContent.toLowerCase().includes(pipelineContract)) {
+  if (!agentsContent.toLowerCase().includes(pipelineContract.toLowerCase())) {
     issues.push('AGENTS.md missing hard workflow contract pipeline.')
   }
   if (!agentsContent.includes('every interaction must emit one of')) {

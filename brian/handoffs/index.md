@@ -5,4 +5,4 @@
 Session handoffs capture continuity, unresolved risks, and immediate next actions.
 
 ## Entries
-- [[handoff-001]]
+- No handoff files recorded yet in this branch.

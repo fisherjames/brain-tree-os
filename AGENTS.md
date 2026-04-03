@@ -45,6 +45,10 @@ Brian is a delegated company operating system in markdown.
 - User-visible changes include before/after evidence note where feasible.
 - Human verification is required before merge.
 
+## Interaction Output Contract
+- every interaction must emit one of: `question`, `decision`, `handoff`, `task_update`, `verification_record`, or `briefing`.
+- Free-form chat without a workflow artifact is not valid operating output.
+
 ## Anti-Drift Rule
 - Any doctrine change requires a same-pass sweep across CLI, Web, and MCP/projection behavior.
 - Remove stale or tangential behavior rather than preserving compatibility by default.
