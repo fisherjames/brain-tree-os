@@ -1,4 +1,5 @@
 import { BrainFs } from '../../fs/brain-fs.js'
+import { scanSkills, scanRules } from '../../fs/skill-scanner.js'
 import crypto from 'crypto'
 
 type McpHandler = (
@@ -76,5 +77,13 @@ ${description}
 
   'briefing.generate': async () => {
     return { status: 'ok', message: 'Briefing generated' }
+  },
+
+  'config.get_skills': async (_params, brainRoot) => {
+    return { skills: scanSkills(brainRoot) }
+  },
+
+  'config.get_rules': async (_params, brainRoot) => {
+    return { rules: scanRules(brainRoot) }
   },
 }

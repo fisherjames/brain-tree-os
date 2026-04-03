@@ -2,11 +2,7 @@
 
 ## Active Tasks
 
-- [ ] Wire memU autonomous ingestion for real-time markdown sync
-- [ ] Build doctrine linting CLI command for schema validation
-- [ ] Add Playwright e2e test for Mission Control flow
-- [ ] Implement squad configuration persistence
-- [ ] Add skill/rule file scanning for Agents + Workflow tab
+_No active tasks._
 
 ## Completed
 
@@ -14,5 +10,9 @@
 - [x] Shared types and Zod schemas
 - [x] Server core with MCP protocol
 - [x] All 7 UI tab surfaces
-- [x] CLI with 17 commands
+- [x] CLI with 18 commands (added doctrine-lint)
 - [x] Governance engine with verification gates
+- [x] Doctrine linting CLI command for schema validation
+- [x] Squad configuration persistence (squads.json)
+- [x] Skill/rule file scanning for Agents + Workflow tab
+- [x] Playwright e2e test for Mission Control flow

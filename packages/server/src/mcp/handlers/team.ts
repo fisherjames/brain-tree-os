@@ -12,6 +12,7 @@ import {
 } from '../../governance/branch-policy.js'
 import { checkPolicyForStage } from '../../governance/policy-registry.js'
 import { BrainFs } from '../../fs/brain-fs.js'
+import { SquadsStore } from '../../fs/squads-store.js'
 
 type McpHandler = (
   params: Record<string, unknown>,
@@ -27,8 +28,28 @@ export const teamHandlers: Record<string, McpHandler> = {
     return fs.getSnapshot(brainId ?? '')
   },
 
-  'team.get_squads': async () => {
-    return { squads: [] }
+  'team.get_squads': async (_params, brainRoot) => {
+    const store = new SquadsStore(brainRoot)
+    return { squads: store.list() }
+  },
+
+  'team.upsert_squad': async (params, brainRoot) => {
+    const store = new SquadsStore(brainRoot)
+    const squad = store.upsert(params.squad as Parameters<SquadsStore['upsert']>[0])
+    return { squad }
+  },
+
+  'team.set_active_squad': async (params, brainRoot) => {
+    const store = new SquadsStore(brainRoot)
+    const squad = store.setActive(params.id as string, params.active !== false)
+    if (!squad) throw new Error(`Squad ${params.id} not found`)
+    return { squad }
+  },
+
+  'team.remove_squad': async (params, brainRoot) => {
+    const store = new SquadsStore(brainRoot)
+    const removed = store.remove(params.id as string)
+    return { removed }
   },
 
   'team.get_live_demo_gate': async () => {
