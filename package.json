@@ -13,10 +13,16 @@
     "format": "prettier --check .",
     "format:fix": "prettier --write .",
     "test:unit": "turbo run test:unit",
-    "test:e2e": "turbo run test:e2e"
+    "test:e2e": "turbo run test:e2e",
+    "doctrine-lint": "tsx packages/cli/src/commands/doctrine-lint-runner.ts",
+    "verify": "npm run format && npm run lint && npm run typecheck && npm run test:unit && npm run doctrine-lint"
   },
   "packageManager": "npm@10.9.4",
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@typescript-eslint/eslint-plugin": "^8.58.0",
+    "@typescript-eslint/parser": "^8.58.0",
+    "eslint": "^10.2.0",
     "prettier": "^3.4.0",
     "turbo": "^2.3.0",
     "typescript": "^5.7.0"
